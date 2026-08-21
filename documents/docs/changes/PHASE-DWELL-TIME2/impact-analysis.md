@@ -1,283 +1,130 @@
-# impact-analysis
+# Impact Analysis
 
-**Ticket ID**: PHASE-DWELL-TIME
-**Vai trò**: Principal Engineer — impact analysis trước khi implement.
-**Create date**: 2026-08-19
-**Update date**: 2026-08-20
-**Nguồn đọc**: `spec-pack.md`, `open-issues.md`, `context.md`, `ticket-rules.md`,
-`source-map.md`, `docs/architecture/*`, `docs/standards/*`, source đích đọc
-lại toàn văn ở vòng verify này (`PmDashboardJdbcAdapter.java`,
-`PmDashboardModels.java`, `PmDashboardDtos.java`,
-`PmDashboardRepositoryPort.java`, `PmDashboardController.java`,
-`PmDashboardService.java`, `ArtifactScannerService.java`,
-`ArtifactScannerJdbcAdapter.java`, `MarkdownParserCore.java`,
-`TicketDetailDrawer.tsx`, `lib/api.ts`, `lib/utils.ts`, migration
-`V4, V391, V394, V397, V501, V502, V503, V505, V511`, `docs/standards/database.md`),
-test hiện có (`TicketDetailDrawer.test.tsx`, `ArtifactScannerServiceTest.java`).
+**Ticket ID**: AC-TEST-COVERAGE   
+**Create date**: 2026-06-26  
+**Author**: OpenAI  
+**Update date**: 2026-06-26  
 
----
+## 1. Change Content
 
-## Xác minh kỹ thuật 2026-08-20 (vòng 2) — đọc lại source thật, sửa các điểm sai/thiếu ở vòng 1
+Phase 3 does not change runtime code yet. It freezes the implementation boundary for AC-Test Coverage and documents the impact of the current source-based plan. The runtime path already exists in the repository: AC lookup, planned coverage persistence, executed test-run persistence, AC mismatch validation, and score/read-model aggregation. The implementation intent for the next phase is to reuse those paths rather than create a new manual-mapping or FE-side recomputation flow.
 
-Vòng phân tích đầu (2026-08-19/20, thân tài liệu bên dưới) được viết dựa
-nhiều vào `context.md`/suy đoán, một số điểm **chưa đọc trực tiếp source
-mới nhất**. Sau khi đọc lại toàn văn, các điểm sau cần sửa:
+## 2. Directly Affected Files
 
-| # | Điểm sai/thiếu ở vòng 1 | Thực tế xác minh | Tác động |
+| file | reason | change type |
+|---|---|---|
+| `docs/changes/AC-TEST-COVERAGE/source-availability.md` | Records source readiness and missing inputs for this phase | create |
+| `docs/changes/AC-TEST-COVERAGE/source-inventory.md` | Inventory of runtime and documentation sources | create |
+| `docs/changes/AC-TEST-COVERAGE/impact-analysis.md` | Impact boundary and non-impact boundary | create |
+| `docs/changes/AC-TEST-COVERAGE/impl-plan.md` | Finalized implementation plan for the next phase | update |
+
+## 3. Indirectly Affected Files
+
+| file | reason | risk |
+|---|---|---|
+| `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestPlanParseService.java` | Current planned-coverage entrypoint | risk of duplicated logic if a second coverage calculator is added |
+| `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestResultsParseService.java` | Current executed-evidence entrypoint | risk of mixing planned and executed semantics |
+| `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestCoverageValidationService.java` | Canonical AC mismatch rule | risk of inconsistent warnings if logic is copied elsewhere |
+| `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/TestEvidenceJdbcAdapter.java` | AC coverage and test-run persistence | risk of bypassing audit and idempotency if not reused |
+| `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/EvidenceQualityScoreRepositoryAdapter.java` | Downstream read-model aggregation | risk of diverging dashboard metrics |
+| `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/quality/EvidenceQualityScoreService.java` | Metric consumer and recompute orchestration | risk of score changes that no longer match coverage state |
+| `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/scanner/ArtifactScannerService.java` | Batch orchestration path | risk only if future phase tries to relabel parser work as scanner work |
+| `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Canonical schema | risk only if later changes are made without rechecking the migration history |
+| `EDCAP_BE/src/test/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/TestEvidenceJdbcAdapterTest.java` | Baseline regression for persistence | risk of stale assumptions if schema behavior changes |
+| `EDCAP_FE/src/App.tsx` and `EDCAP_FE/src/components/Layout.tsx` | Possible future entrypoint if a new read-only surface is introduced | no current runtime impact |
+
+## 4. Caller / Callee
+
+| caller | callee | impact |
+|---|---|---|
+| `ArtifactScannerService` | `TestPlanParseService`, `TestResultsParseService`, `EvidenceQualityScoreService` | Orchestrates parser and score recalculation flows; current plan keeps this as a backend-only batch path |
+| `TestPlanParseService` | `AcCoveragePort.findActiveAcKeys(...)`, `TestCoverageValidationService`, `TestEvidencePersistencePort.replacePlannedCoverage(...)`, `DocParsePersistencePort`, `CiRunRepositoryPort` | Reads AC master data, validates planned coverage, and persists planned coverage rows |
+| `TestResultsParseService` | `AcCoveragePort.findActiveAcKeys(...)`, `TestCoverageValidationService`, `TestEvidencePersistencePort.upsertTestRun(...)`, `DocParsePersistencePort`, `CiRunRepositoryPort` | Reads AC master data, validates executed evidence, and persists test-run rows |
+| `EvidenceQualityScoreRepositoryAdapter` | `tbl_fact_ac_test_coverage`, `tbl_fact_test_run`, `tbl_fact_test_case`, `tbl_fact_acceptance_criteria` | Builds read-model signals for dashboard and score calculations |
+| `EvidenceQualityScoreService` | `EvidenceQualityScoreRepositoryPort` | Consumes the read-model signals and computes the final score |
+| FE pages / layout | BE controllers | No dedicated AC-Test Coverage FE caller exists yet; any future page should read, not recompute |
+
+## 5. FE Impact
+
+No FE runtime change is required in Phase 3. The current FE route tree has protected admin/project/repository/team/role/traceability pages but no dedicated AC-Test Coverage page. If a future read-only dashboard surface is added, it should reuse the existing auth/router/layout patterns and consume backend read data only; it should not recompute coverage in the client.
+
+## 6. BE Impact
+
+No BE runtime code is being changed in Phase 3. The plan for the next phase is to reuse existing services and adapters rather than add a parallel AC coverage implementation. The BE impact boundary is therefore mostly a verification boundary: confirm that the current parser services, persistence adapter, and read-model adapter already satisfy the spec-pack behavior before any new code is written.
+
+## 7. API Contract Impact
+
+| endpoint | request impact | response impact | backward compatible? |
 |---|---|---|---|
-| 1 | Ghi package là `EDCAP_BE/.../application/usecase/...` không rõ root package | Root package thực tế là `com.sdd.platform` (ví dụ `com.sdd.platform.application.usecase.scanner.ArtifactScannerService`) | Phải dùng đúng package này khi đặt class/service mới, tránh AI tự đoán `com.edcap` |
-| 2 | Giả định `CHANGE_TARGET_FILES` có 7 file mục tiêu | **Thực tế có 8 file** (`ArtifactScannerService.java:60-68`): spec-pack, impl-plan, review-checklist, self-review, test-plan, test-results, report, **và `blackbox-testcases.md`**) — nhưng vòng lặp parse (dòng 366-441) **không có branch đọc nội dung riêng cho `blackbox-testcases.md`** | Cần chốt lại: dwell-time có tính luôn `blackbox-testcases.md` không (7 phase hiển thị vẫn đúng vì đây là phase-mapping qua `tbl_dim_artifact_type`, không phải đếm số file — nhưng nếu bỏ sót đọc header của file này, phase tương ứng có thể thiếu dữ liệu). Thêm vào "Điểm chưa rõ" #8 |
-| 3 | Giả định "tái dùng blob content đã đọc sẵn, không cần đọc lại/không thêm GitHub API call mới" | **Sai đã xác minh bằng code**: `scanTicketDirectory` **không có map blob dùng chung** — mỗi branch trong vòng lặp (dòng 366-441) tự gọi `source.readBlob(...)` riêng, độc lập, không lưu vào biến dùng lại được. Không có sẵn "content đã đọc" nào để service mới tái sử dụng nguyên trạng | Rủi ro hiệu năng/API call bị đánh giá thấp ở vòng 1 — cần chọn 1 trong 2 hướng: (a) refactor vòng lặp hiện có để gom `String content` mỗi file vào 1 `Map<String,String>` dùng chung rồi mới gọi service mới (an toàn về API call nhưng đụng vào code hiện có nhiều hơn dự kiến), hoặc (b) service mới tự gọi `source.readBlob(...)` lại theo `source_path` từ `ArtifactSnapshot` đã build — chấp nhận thêm tối đa 8 GitHub API call/lần scan/ticket. Chuyển từ "cần xác nhận" (vòng 1) sang quyết định bắt buộc ở Gate — xem "Điểm chưa rõ" #9 |
-| 4 | Giả định theo `20-architecture.md`: "Each external upsert uses its own `TransactionTemplate`" nên adapter mới phải theo đúng pattern này | **Thực tế: `ArtifactScannerService`/`ArtifactScannerJdbcAdapter` hiện tại KHÔNG dùng `TransactionTemplate`/`@Transactional` ở đâu cả** (grep toàn file, 0 kết quả) — mọi method ghi (`insertSnapshot`, `updateSnapshot`, `updateSnapshotParsedSummary`, `upsertTicketPhaseStatus`) chỉ là 1 lệnh `jdbc.update`/`queryForObject` đơn lẻ, dựa vào autocommit mặc định | Đây là **sai lệch có sẵn từ trước** giữa code và `20-architecture.md`, không phải lỗi phát sinh từ ticket này — **không có trách nhiệm sửa** trong scope này. Method ghi bảng mới nên theo đúng pattern thực tế đang dùng (1 `jdbc.update` đơn lẻ), không tự bịa ra `TransactionTemplate` không có tiền lệ trong class này |
-| 5 | `PmDashboardJdbcAdapter.findDetail`/`DashboardTicketDetail`/`PmDashboardTicketDetailDto` — số dòng | **Xác nhận khớp 100%** với vòng 1: `findDetail` dòng 214-270, khởi tạo record dòng 259-269, `DashboardTicketDetail` record `PmDashboardModels.java:266-277`, `PmDashboardTicketDetailDto` `PmDashboardDtos.java:334-360`. Không có bất kỳ query/field nào liên quan phase-dwell-time tồn tại sẵn — phải viết mới hoàn toàn | Không đổi kế hoạch, chỉ xác nhận độ tin cậy cao hơn |
-| 6 | `PhaseCard` dòng 115-157, điểm chèn Card mới dòng 745 | **Xác nhận khớp 100%** | Không đổi |
-| 7 | `TicketDetailDrawer.test.tsx` — đường dẫn file | Đường dẫn thực tế là `EDCAP_FE/src/__ tests __/pm-dashboard/TicketDetailDrawer.test.tsx` — **tên thư mục có khoảng trắng literal** (`__ tests __`, không phải `__tests__` chuẩn) | Ghi đúng path này khi tạo/sửa file, tránh lỗi "file not found" do gõ nhầm thành `__tests__` |
-| 8 | `open-issues.md`/`source-availability.md` liệt kê `ja/vi locale.json` là "chưa đọc" | **Đã xác minh: cả `ja/locale.json` và `vi/locale.json` đều tồn tại và đã có sẵn section `Pages.PmDashboard`** (dòng 136/137 tương ứng) — không phải thiếu, chỉ là chưa được đọc kỹ ở vòng trước | Bỏ khỏi danh sách "phải đọc trước implementation" trong `open-issues.md`/`phase-status.md` — chỉ cần thêm 1 key mới vào cả 3 file, không có rủi ro cấu trúc |
-| 9 | Chưa xác định migration version kế tiếp | Migration cao nhất hiện có là **`V511__ai_quality.sql`** → migration mới phải là **`V512__...sql`** | Dùng đúng số này khi đặt tên file migration, tránh trùng version |
-| 10 | Chưa có tiền lệ rõ cho UNIQUE constraint trên `artifact_snapshot_id` | Tiền lệ gần nhất là `tbl_fact_ticket_issue` (V397) — FK tới `artifact_snapshot_id`, **KHÔNG UNIQUE** (1:nhiều, phân biệt bằng `issue_order`); không có bảng `tbl_fact_*` nào hiện có dùng UNIQUE 1:1 trực tiếp trên `artifact_snapshot_id`. Bảng gần nhất về hình dạng 1:nhiều khác là `tbl_fact_artifact_parsed_section` (cũng FK `artifact_snapshot_id`, không UNIQUE) | Không có tiền lệ schema ép buộc — quyết định UNIQUE hay không thực sự là quyết định thiết kế mới của ticket này, không suy ra được từ pattern có sẵn. Giữ nguyên là quyết định cần chốt ở Gate (không tự chọn) |
-| 11 | Constructor `ArtifactScannerService` có 12 dependency, 2 overload "backward-compatible" (2-arg, 11-arg) dùng trong test | Xác nhận `ArtifactScannerServiceTest.java` chỉ dựng service qua 2 overload này (không gọi constructor 12-arg trực tiếp) → **thêm 1 dependency mới vào constructor 12-arg chính, giữ nguyên 2 overload cũ (fill `null`/default cho tham số mới) sẽ KHÔNG làm vỡ compile test hiện có** | Gỡ bỏ rủi ro "constructor đổi có thể vỡ test" nêu ở vòng 1 — miễn tuân thủ đúng cách thêm này |
-| 12 | Chuẩn hoá key header (`normalizeMetadataKey`) | Xác nhận: chỉ replace khoảng trắng (`\s+`) thành `_`, **không xử lý dấu gạch ngang** — `**Create-Date**` sẽ KHÔNG normalize thành `create_date`. Mọi template ticket hiện có đều dùng `**Create date**`/`**Update date**` (khoảng trắng), nên an toàn với dữ liệu hiện có | Ghi chú rủi ro: nếu sau này ai đó gõ header dùng gạch ngang, parse sẽ thất bại âm thầm (trả `null`, không throw) — chấp nhận được vì đã có sẵn cơ chế "parse fail → hiển thị `-`" |
+| `POST /api/v1/demo/test-plan-parses` | None in Phase 3 | None in Phase 3 | Yes |
+| `POST /api/v1/demo/test-results-parses` | None in Phase 3 | None in Phase 3 | Yes |
+| `GET /api/v1/evidence-quality-scores/tickets/{ticketId}` | None in Phase 3 | None in Phase 3 | Yes |
+| `POST /api/v1/evidence-quality-scores` and finalize/partial variants | None in Phase 3 | None in Phase 3 | Yes |
+| `POST /api/v1/data-ops/artifact-scans` | None in Phase 3 | None in Phase 3 | Yes |
 
----
+There is no dedicated AC-Test Coverage API contract in the repository today, so no contract change is planned for this phase.
 
-## ⚠️ Mâu thuẫn tài liệu cần xử lý trước khi code
+## 8. DTO / Schema / Validation Impact
 
-`spec-pack.md` (v2026-08-20) **vẫn mô tả thiết kế cũ đã bị thay thế**:
-§5 định nghĩa `Entry(ticket, phase) = MIN(created_at)` trên
-`tbl_fact_artifact_snapshot`, §8 chỉ nói "thêm 1 SQL VIEW", §16
-Assumption A-PHASE-DWELL-TIME-1 vẫn chấp nhận `created_at` làm proxy. Đây
-là thiết kế đã bị `context.md`/`ticket-rules.md`/`source-map.md` (cập nhật
-2026-08-20 sau) **chứng minh sai bằng code** (xem `context.md` mục "Rule
-nghiệp vụ đặc thù" #1) và **thay thế hoàn toàn** bằng nguồn
-`create_date`/`update_date` tự khai báo trong header file `.md`, lưu ở 1
-bảng mới, tính qua 1 service mới dùng chung.
+- Current DTOs already exist for parse requests and parse snapshots: `TestDocParseDtos.TestPlanParseRequestDto`, `TestResultsParseRequestDto`, `TestArtifactParseResultDto`, and `TestArtifactParseSnapshotDto`.
+- Validation rules already exist at the service boundary through `TestCoverageValidationService` and the parse services.
+- No new DTO shape is required in Phase 3.
+- No new validation vocabulary should be introduced; the current status and warning semantics must remain stable.
 
-**Quyết định cho impl-plan này**: dùng đúng thiết kế mới nhất trong
-`context.md`/`ticket-rules.md`/`source-map.md` (nguồn đáng tin cậy hơn vì
-mới hơn và có bằng chứng code cụ thể). `spec-pack.md` §5/§8/§16 cần được
-cập nhật lại sau khi impl-plan này được duyệt — ghi nhận là việc còn nợ,
-không tự sửa `spec-pack.md` trong phạm vi file này (theo `ticket-rules.md`:
-mọi mơ hồ phát sinh → `open-issues.md`, không tự quyết định ở tài liệu spec).
+## 9. DB / Migration Impact
 
----
+No DB migration is required in Phase 3. `V4__init_shema_v2.sql` already contains the needed canonical tables: `tbl_fact_acceptance_criteria`, `tbl_fact_test_run`, `tbl_fact_test_case`, `tbl_fact_ac_test_coverage`, `tbl_fact_evidence_event`, and `tbl_fact_data_quality`. If a later runtime gap appears, it should be addressed with a new additive Flyway migration instead of editing V4 in place.
 
-## Tổng quan thay đổi
+## 10. Batch / Job / Event Impact
 
-Thêm field `phaseDwellTime` vào `GET
-/api/v1/pm/dashboard/tickets/{ticketId}/detail` — hiển thị Dwell Time
-(`hh:mm:ss` hoặc `"-"`) cho 7 phase (`1,3,4,5,6,7,8`) trong `PhaseCard` của
-`TicketDetailDrawer.tsx`. Nguồn dữ liệu: `create_date`/`update_date` tự
-khai báo trong header mỗi file `.md` ticket, parse qua 1 service mới dùng
-chung (`MarkdownParserCore`), lưu vào 1 bảng DB mới (additive), cộng dồn
-theo phase qua mapping `tbl_dim_artifact_type.phase_id`. Không sửa
-`TicketPhaseEvaluatorService`/`tbl_fact_ticket_phase_status`, không tạo
-endpoint mới.
+- No new batch job is introduced in Phase 3.
+- `ArtifactScannerService` remains the existing batch/orchestration pattern.
+- Parse evidence and data-quality records continue to use the existing event/audit tables.
+- No new event type is required for the plan phase.
 
-**Phân loại thay đổi**: có **DB change** (1 bảng mới) và **contract
-change** (field mới trên DTO dùng chung `PmDashboardTicketDetail`) — xem
-"Điểm chưa rõ" #7 về việc có nên nâng review mode.
+## 11. Test Impact
 
----
+- Existing tests that already anchor this area remain relevant: `TestEvidenceJdbcAdapterTest`, `EvidenceQualityScoreRepositoryAdapterTest`, `EvidenceQualityScoreServiceTest`, and `EvidenceQualityScoreControllerTest`.
+- The biggest future gap is likely in parser-service-specific coverage for `TestPlanParseService` and `TestResultsParseService`.
+- If runtime implementation starts, tests should focus on idempotency, AC validation warnings, planned vs executed separation, and read-model stability.
 
-## Ảnh hưởng trực tiếp
+## 12. Operation / Monitoring Impact
 
-| Vùng | Thay đổi | File |
+- The current runtime already records traceable signals such as `traceId`, `ticketId`, snapshot IDs, run IDs, evidence events, and data-quality issues.
+- No new monitoring surface is required for Phase 3.
+- Any future runtime change should keep warnings visible instead of suppressing them and should continue to avoid raw prompt/chat persistence.
+
+## 13. Rollout / Rollback Impact
+
+- Phase 3 itself is documentation-only, so rollback is file revert only.
+- If the next phase introduces runtime changes, a safe rollout should be additive and reuse-first.
+- Rollback should prefer reverting the new runtime change or disabling the new read surface rather than altering historical V4 schema behavior.
+
+## 14. Areas Determined to be Unaffected and Based on
+
+| area | judgment | evidence |
 |---|---|---|
-| DB | Thêm 1 bảng mới (đề xuất `tbl_fact_artifact_document_date`) | Migration mới `V{n}__add_artifact_document_date.sql` |
-| BE — service mới | 1 service dùng chung trích `create_date`/`update_date` qua `MarkdownParserCore` cho 7 file mục tiêu | Class mới (vị trí — xem gate impl-plan) |
-| BE — port/adapter | Method mới ghi/đọc bảng mới; method mới tính Dwell Time theo phase | Port mới hoặc mở rộng `ArtifactScannerPersistencePort` + adapter tương ứng |
-| BE — domain model | Thêm field `phaseDwellTime` | `PmDashboardModels.DashboardTicketDetail` (record, 1 nơi khởi tạo) |
-| BE — adapter đọc | Thêm subquery/join lấy Dwell Time theo phase | `PmDashboardJdbcAdapter.findDetail(...)` |
-| BE — DTO | Thêm field tương ứng | `PmDashboardDtos.PmDashboardTicketDetailDto` |
-| BE — scan flow | Gọi service mới trong luồng scan hiện có (đọc thêm, không đổi luồng ghi cũ) | `ArtifactScannerService.scanTicketDirectory` (điểm gọi thêm, không sửa logic hiện có) |
-| FE — type | Thêm field vào interface | `lib/api.ts` (`PmDashboardTicketDetail`) |
-| FE — UI | Thêm 1 dòng hiển thị trong `PhaseCard` | `TicketDetailDrawer.tsx:115-157` |
-| FE — helper | `formatDuration` mới (chưa có helper tương tự) | `lib/utils.ts` |
-| i18n | 1 key tên field mới, 3 locale | `public/locales/{en,ja,vi}/locale.json` |
+| Auth / login / session handling | Unaffected | No AC-Test Coverage endpoint touches `AuthController`, `MeController`, or security config in the current plan |
+| Organization / Project / Repository / Customer / Team / Role CRUD | Unaffected | These modules are orthogonal to AC/test coverage and are not referenced by the spec or source inventory |
+| GitHub webhook ingestion | Unaffected | Existing webhook and collector paths are not in the AC-Test Coverage scope |
+| Traceability module | Unaffected for this phase | Current plan does not change `TraceabilityController` or its persistence path |
+| DB schema outside the AC/test/evidence cluster | Unaffected | The canonical tables already exist in V4 and no other tables are targeted |
+| FE locale / i18n plumbing | Unaffected | No new FE surface is being added in this phase |
+| Raw prompt / raw source persistence | Unaffected by design | Ticket rules explicitly forbid it |
 
----
+## 15. Required Options
 
-## Ảnh hưởng gián tiếp
+- Reuse existing AC, test-run, and evidence tables first.
+- Keep parser-only semantics; do not add manual mapping or pinning.
+- Keep FE as a consumer only; do not recompute coverage in the client.
+- Keep warnings and data-quality issues visible and auditable.
+- Keep any later schema change additive via new migration.
 
-| Vùng | Vì sao gián tiếp | Rủi ro |
-|---|---|---|
-| Mọi consumer khác của `PmDashboardTicketDetail`/`DashboardTicketDetail` | Thêm field vào DTO/record dùng chung — về nguyên tắc additive nhưng chưa rà hết nơi consume (Assumption A-PHASE-DWELL-TIME-3, spec-pack §16) | Thấp/Trung bình — cần xác nhận không có code nào so sánh DTO theo cách "đóng" (snapshot đầy đủ trong test khác) |
-| `ArtifactScannerService.scanTicketDirectory` (luồng scan hiện có) | Service mới được gọi trong cùng luồng scan (đọc blob content đã có sẵn) | Trung bình — cần đặt code mới ở vị trí không đổi hành vi ghi/side-effect hiện có (xóa parsed sections, deactivate AC, v.v.) |
-| `tbl_fact_artifact_snapshot` (đọc, không ghi) | Bảng mới có FK `artifact_snapshot_id` tham chiếu bảng này | Thấp — chưa phát hiện luồng DELETE nào trên bảng này trong source đã đọc |
-| Hiệu năng scan (network/CPU) | Service mới cần nội dung blob 7 file — nếu không tái dùng blob đã đọc sẵn mà gọi lại `source.readBlob` riêng, tăng số GitHub API call mỗi lần scan | Trung bình — cần xác nhận dùng lại blob đã đọc trong `scanTicketDirectory`, không gọi thêm |
-| ArchUnit / hexagonal layering | Service/port mới phải nằm đúng layer | Thấp nếu tuân thủ pattern hiện có; ArchUnit chặn build nếu sai |
-| Ticket cũ (backfill) | File `.md` cũ có thể có `Update date` header chưa từng cập nhật lại (quy ước cũ chỉ có ngày) — Dwell Time backfill kém chính xác hơn | Thấp (giới hạn đã biết, đã chấp nhận — xem `context.md`/`open-issues.md`) |
+## 16. Human Decision Required
 
----
+- No open human decision is required to complete this phase.
+- If a later phase needs a dedicated AC-Test Coverage dashboard route or a dedicated read endpoint, confirm the preferred placement and contract shape before coding.
 
-## Ảnh hưởng FE
+## 17. Risk Summary
 
-- `lib/api.ts`: interface `PmDashboardTicketDetail` thêm field
-  `phaseDwellTime: { phaseCode: string; phaseOrder: number; dwellTime: string | null }[]`.
-  Không cần sửa `endpoints.pmDashboard.detail(...)` (generic `api.get<T>`).
-- `lib/utils.ts`: thêm hàm mới `formatDuration` (tên đề xuất) — input 2
-  timestamp hoặc số giây, output `hh:mm:ss` không giới hạn 24h. Không sửa
-  `formatDateTime` hiện có.
-- `TicketDetailDrawer.tsx`: sửa hàm `PhaseCard` (dòng 115-157) — lặp qua
-  `detail.phaseDwellTime`, hiển thị dưới `phaseCreatedAt` hiện có (dòng
-  146-152). Không đổi field/props khác của component.
-- `TicketDetailDrawer.test.tsx`: object `detail` giả lập (dòng 26-114)
-  phải bổ sung `phaseDwellTime` để khớp `satisfies PmDashboardTicketDetail`
-  — nếu field bắt buộc (không optional), test hiện có **sẽ vỡ compile**
-  cho đến khi cập nhật. Phải sửa cùng lúc với thay đổi type.
-- Không có route/màn hình mới; không đổi hành vi loading/error hiện có của
-  `TicketDetailDrawer` (chỉ thêm dữ liệu hiển thị).
-
----
-
-## Ảnh hưởng BE/API
-
-- **Endpoint không đổi**: `GET /api/v1/pm/dashboard/tickets/{ticketId}/detail`
-  — chỉ mở rộng response.
-- **Controller không đổi**: `PmDashboardController.detail(...)` (dòng
-  80-86) chỉ gọi `.from(service.detail(...))`.
-- **Service không đổi chữ ký**: `PmDashboardService.detail(ticketId, caller)`
-  giữ nguyên logic `requirePm` + `NotFoundException` — field mới tự động
-  có mặt qua `DashboardTicketDetail` mở rộng.
-- **Port mới hoặc mở rộng**: cần quyết định (xem gate impl-plan) — thêm
-  method vào `PmDashboardRepositoryPort`/adapter cho subquery Dwell Time,
-  và 1 port/method mới riêng để ghi bảng `create_date`/`update_date`
-  (không dùng `ArtifactScannerPersistencePort.updateSnapshotParsedSummary`).
-- **Service mới độc lập với luồng ghi hiện có**: gọi trong
-  `ArtifactScannerService.scanTicketDirectory`, chỉ đọc thêm + ghi vào
-  bảng mới — không sửa nhánh nào ghi `tbl_fact_artifact_snapshot`/
-  `tbl_fact_ticket_phase_status` hiện có.
-
----
-
-## Ảnh hưởng DTO/Schema/Validation
-
-| DTO/Model | Thay đổi | Ghi chú |
-|---|---|---|
-| `PmDashboardModels.DashboardTicketDetail` (record, application) | + field `phaseDwellTime` | Record bất biến — sửa cả định nghĩa và 1 nơi khởi tạo (`PmDashboardJdbcAdapter.java:259-269`) |
-| `PmDashboardDtos.PmDashboardTicketDetailDto` (record, web) | + field `phaseDwellTime` + cập nhật `from(...)` | Cùng pattern factory hiện có |
-| FE `PmDashboardTicketDetail` (`lib/api.ts`) | + field `phaseDwellTime` | Dùng kiểu `dwellTime: string \| null` (không optional field) để buộc mọi nơi dựng object test xử lý rõ ràng |
-| Validation | Không có input mới từ người dùng — `ticketId` path variable đã validate sẵn (tồn tại trong `tbl_dim_ticket`, ném `NotFoundException` nếu không) | Không cần thêm `@Valid`/DTO request mới |
-| Bảng mới (`tbl_fact_artifact_document_date`, đề xuất) | `artifact_snapshot_id UUID` (FK), `document_create_at TIMESTAMPTZ` (nullable), `document_update_at TIMESTAMPTZ` (nullable), `created_at`/`updated_at`/`created_by`/`updated_by` theo `database.md` | UNIQUE trên `artifact_snapshot_id` hay cho phép nhiều dòng lịch sử — chưa chốt, xem "Điểm chưa rõ" #2 |
-
----
-
-## Ảnh hưởng DB/Migration
-
-- **Bảng mới, additive-only** — không ALTER/DROP `tbl_fact_artifact_snapshot`,
-  `tbl_fact_ticket_phase_status`, hay bảng hiện có nào khác
-  (AC-PHASE-DWELL-TIME-9).
-- Theo `database.md`: bảng mới dùng prefix `tbl_fact_` (dữ liệu event/fact),
-  PK `UUID DEFAULT gen_random_uuid()`, bắt buộc `created_at`/`updated_at
-  TIMESTAMPTZ NOT NULL DEFAULT NOW()` + `created_by`/`updated_by`, migration
-  đặt tên `V{n}__snake_case.sql`, FK tới
-  `tbl_fact_artifact_snapshot(artifact_snapshot_id)`.
-- **Không có down-migration** (Flyway Community — `repository-db-map.md §7`)
-  — mọi migration là vĩnh viễn một khi đã chạy trên môi trường chia sẻ.
-  Rollback thực chất = migration mới (forward-fix).
-- Theo `00-safety.md §3`: migration mới phải hỏi người dùng trước khi chạy
-  `flyway migrate` trên môi trường chia sẻ.
-- **Rủi ro số lượng dữ liệu**: bảng mới tối đa 1 dòng/`artifact_snapshot_id`
-  × 8 file/ticket (đã xác minh `CHANGE_TARGET_FILES` có 8 phần tử, không
-  phải 7 — xem "Xác minh kỹ thuật" #2) — tăng thêm ~8N dòng cho N ticket.
-  Không cùng cấp độ với `tbl_fact_artifact_snapshot`/`tbl_fact_ci_run`,
-  rủi ro hiệu năng thấp ở quy mô hiện tại.
-- **Index cần cân nhắc**: `PmDashboardJdbcAdapter.findDetail` sẽ JOIN bảng
-  mới theo `artifact_snapshot_id` — cần ít nhất 1 index (hoặc dùng UNIQUE
-  constraint làm index luôn nếu chọn 1-dòng/snapshot).
-- **Migration version kế tiếp xác nhận**: migration cao nhất hiện có là
-  `V511__ai_quality.sql` → migration mới phải đặt tên `V512__...sql`.
-- **Tiền lệ schema đã kiểm tra**: `tbl_fact_ticket_issue` (V397) là bảng
-  FK tới `artifact_snapshot_id` gần nhất — **không UNIQUE** (1:nhiều, phân
-  biệt bằng `issue_order`); `tbl_fact_artifact_parsed_section` (V4) cùng
-  hình dạng, cũng không UNIQUE. Không có tiền lệ 1:1 UNIQUE trực tiếp trên
-  `artifact_snapshot_id` trong toàn bộ migration hiện có — quyết định
-  UNIQUE hay không cho bảng mới là quyết định thiết kế mới, không suy ra
-  được từ pattern có sẵn (giữ nguyên ở Gate, không tự chọn thay).
-
----
-
-## Ảnh hưởng Batch/Event/External IF
-
-- **Không có batch/job mới** — service mới chạy trong luồng scan hiện có
-  (`ArtifactScannerService.scanTicketDirectory`), không phải job riêng.
-- **External interface không đổi**: không thêm GitHub API call mới nếu
-  tái dùng blob content đã đọc sẵn trong luồng scan — phải xác nhận khi
-  implement (xem "Ảnh hưởng gián tiếp").
-- Không có webhook/event mới, không đổi `ArtifactScannerSourcePort`.
-
----
-
-## Ảnh hưởng Test
-
-| Loại | File | Ảnh hưởng |
-|---|---|---|
-| BE unit — có sẵn | `TicketPhaseEvaluatorServiceTest.java` | Không cần sửa — service không bị đụng; chạy lại để xác nhận regression |
-| BE unit — có sẵn | `ArtifactScannerServiceTest.java` (đã đọc toàn văn ở vòng verify này) | **Xác nhận an toàn**: test chỉ dựng `ArtifactScannerService` qua 2 overload "backward-compatible" (2-arg, 11-arg), không gọi constructor 12-arg chính trực tiếp. Thêm 1 dependency mới vào constructor 12-arg (giữ nguyên 2 overload cũ, fill `null`/default cho tham số mới) sẽ **không** làm vỡ compile file test này. Chỉ cần chạy lại để xác nhận hành vi runtime không đổi |
-| BE unit — mới | Service trích header, adapter ghi/đọc bảng mới, subquery Dwell Time | Cần tạo — mock port interface theo `testing.md`, không mock domain record |
-| FE unit — có sẵn | `EDCAP_FE/src/__ tests __/pm-dashboard/TicketDetailDrawer.test.tsx` (chú ý tên thư mục có khoảng trắng literal `__ tests __`, không phải `__tests__`) | Sẽ vỡ compile nếu `phaseDwellTime` là field bắt buộc và object `detail satisfies PmDashboardTicketDetail` giả lập (dòng 26-114) không được cập nhật — sửa cùng lúc |
-| FE unit — mới | `formatDuration` helper, render `PhaseCard` với Dwell Time | Cần tạo |
-| ArchUnit | `ArchitectureTest.java` | Chạy lại sau khi thêm class/package mới — xác nhận layer mới tuân thủ hexagonal rules |
-| AC Closure | Theo `testing.md`: field mới phải verify **mounted thật** trong `TicketDetailDrawer`, không chỉ test cô lập `PhaseCard` | Bắt buộc cho AC-PHASE-DWELL-TIME-1/2/3/4 |
-
----
-
-## Ảnh hưởng Operation/Monitoring
-
-- Không có job vận hành mới; bảng mới chỉ được ghi trong luồng scan hiện có.
-- Nếu service mới trích header lỗi (parse fail, header thiếu field), cần
-  quyết định log warning hay ghi `NULL` im lặng — xem "Điểm chưa rõ" #6.
-- Theo `error-handling.md`: không thêm `ResponseEntity`/`try-catch` ad-hoc
-  trong controller. Nếu lỗi khi tính Dwell Time cần chỉ ảnh hưởng riêng
-  field đó (không phải toàn API `/detail`), phải bọc try/catch **ở tầng
-  Service/Adapter** (không phải Controller) — xem "Điểm chưa rõ" #4.
-- Không cần alert/dashboard vận hành mới.
-
----
-
-## Ảnh hưởng Rollout/Rollback
-
-- **Rollout**: additive-only, không breaking change cho consumer hiện có
-  của endpoint — có thể rollout thẳng, không cần feature flag (chưa thấy
-  cơ chế feature flag nào trong codebase đã đọc).
-- **Backfill**: dữ liệu bảng mới chỉ được tạo khi scan chạy lại cho ticket
-  đó — ticket cũ hiển thị `"-"` cho tới lần scan tiếp theo, trừ khi trigger
-  `FULL` scan sau deploy (xem "Điểm chưa rõ" #5).
-- **Rollback DB**: không có down-migration — rollback thực tế là (a)
-  migration mới `DROP TABLE` bảng vừa thêm (an toàn vì bảng chỉ phục vụ
-  tính năng này, chưa có consumer khác), hoặc (b) giữ bảng, chỉ revert
-  code BE/FE (ẩn field khỏi response/UI). Khuyến nghị (b) trước.
-- **Rollback code**: additive-only + field mới có thể là `null`/mảng rỗng
-  an toàn → revert code là git revert đơn giản, không cần thao tác DB nếu
-  chọn (b).
-
----
-
-## Vùng được phán định là không ảnh hưởng
-
-| Vùng | Căn cứ |
-|---|---|
-| `TicketPhaseEvaluatorService`/`tbl_fact_ticket_phase_status` | Đọc toàn văn service (102 dòng) — không có method/logic liên quan lịch sử phase hay Dwell Time; ticket-rules cấm sửa; feature mới không gọi tới class này |
-| `PmDashboardController.detail(...)` | Đọc toàn văn (`web/rest/PmDashboardController.java:80-86`) — chỉ gọi service + map DTO, không có logic riêng cần sửa |
-| Permission/`requirePm` | Đọc `PmDashboardService.detail` (91-97) — permission check bọc toàn bộ response, field mới nằm trong response đã bảo vệ |
-| `ArtifactScannerSourcePort` (đọc GitHub tree/blob) | Không cần thêm method — service mới dự kiến tái dùng blob đã đọc trong `scanTicketDirectory`/`buildSnapshot` |
-| `DevDashboard` (domain "chị em") | Grep xác nhận `DevDashboardJdbcAdapter`/`DevDashboardModels` là code riêng biệt, không dùng chung `PmDashboardModels`/`PmDashboardTicketDetail` |
-| `vw_artifact_inventory_current` | Thiết kế mới không dùng view này (dùng bảng mới riêng) |
-| 4 parser chuyên biệt (spec-pack/review-checklist/self-review/report) | Service mới gọi `MarkdownParserCore` độc lập, không sửa/gọi lại 4 parser này |
-| `ImplPlanParseService`/`TestPlanParseService`/`TestResultsParseService` | Service mới không phụ thuộc 3 service này (đọc thẳng `MarkdownParserCore`) |
-
----
-
-## Điểm chưa rõ
-
-| # | Vấn đề | Ảnh hưởng nếu không chốt | Đề xuất |
-|---|---|---|---|
-| 1 | `spec-pack.md` §5/§8/§16 vẫn mô tả thiết kế cũ (`created_at`) — mâu thuẫn với `context.md` | Người review sau có thể hiểu sai nguồn dữ liệu chính thức | Cập nhật `spec-pack.md` song song hoặc ngay sau khi impl-plan được duyệt, trước khi merge code |
-| 2 | Tên/schema chính xác bảng mới và có UNIQUE trên `artifact_snapshot_id` hay không (1 dòng vs nhiều dòng lịch sử) | Ảnh hưởng thiết kế migration + cách adapter ghi (upsert vs insert-only) | Chốt ở gate trước implementation |
-| 3 | Vị trí đặt service mới trích header (package nào, ai gọi nó) | Ảnh hưởng ArchUnit layer + khả năng unit test độc lập | Chốt ở gate trước implementation |
-| 4 | `error-handling.md` cấm try/catch ad-hoc trong controller, nhưng spec-pack yêu cầu lỗi khi lấy Dwell Time → `"-"` cho riêng phase đó (không phải lỗi toàn API) | Không rõ mức nào (per-phase hay toàn request) trả `"-"` | Bọc riêng phần tính Dwell Time trong Service/Adapter bằng try/catch nội bộ (log + trả `null` cho field đó), không để exception thoát ra Controller |
-| 5 | Có cần trigger 1 lần `FULL` scan lại sau deploy để backfill ngay Dwell Time cho ticket cũ? | Ảnh hưởng trải nghiệm ngay sau rollout | Hỏi người dùng/PM trước khi rollout |
-| 6 | Header lỗi/thiếu `create_date`/`update_date` khi parse — log warning hay im lặng? | Ảnh hưởng khả năng debug khi Dwell Time sai | Khuyến nghị log warning (không phải error), không throw exception làm hỏng cả luồng scan |
-| 7 | Có nên nâng review mode lên Heavy vì có DB change + contract change trên DTO dùng chung? | Ảnh hưởng số vòng review cần thiết | Đề xuất giữ Standard nhưng bắt buộc 1 vòng review riêng cho migration DB mới trước khi duyệt merge (Heavy-lite) — xác nhận với Tech Lead |
-| 8 | `CHANGE_TARGET_FILES` thực tế có 8 phần tử (bao gồm `blackbox-testcases.md`), nhưng vòng lặp parse hiện tại không có branch đọc riêng cho file này — dwell-time có cần tính cho artifact-type ứng với `blackbox-testcases.md` không? | Nếu bỏ sót, phase ứng với artifact-type này (nếu có mapping `phase_id`) sẽ luôn hiển thị `"-"` dù file tồn tại | Xác nhận: service mới phải chủ động đọc cả 8 file (không dựa vào nhánh parse có sẵn), không giới hạn theo các branch đã có |
-| 9 | Chiến lược đọc blob cho service mới: refactor vòng lặp hiện có để chia sẻ `content` đã đọc (an toàn API call nhưng đụng code hiện có nhiều hơn), hay để service mới tự `readBlob` lại theo `source_path` (đơn giản hơn nhưng cộng thêm tối đa 8 GitHub API call/lần scan/ticket)? | Ảnh hưởng hiệu năng scan (rate limit GitHub API) và mức độ đụng chạm vào `scanTicketDirectory` hiện có | Khuyến nghị hướng (b) — service mới tự đọc lại `source_path` đã có trong `ArtifactSnapshot`/`snapshotsByFileName` — đơn giản, không đụng nhánh parse hiện có, đổi lại chấp nhận tối đa +8 API call/scan (quy mô 1 ticket, tần suất scan không cao — rủi ro thấp); chốt ở Gate |
+The main risk is not missing schema support; the current repository already has the schema and most of the runtime logic. The main risk is scope drift: adding a second coverage calculator, adding manual mapping, or pushing coverage recomputation into the FE. The chosen plan avoids those risks by treating the current parser/persistence/read-model path as the single implementation line.

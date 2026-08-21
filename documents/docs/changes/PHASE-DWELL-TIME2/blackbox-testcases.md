@@ -1,39 +1,218 @@
-# blackbox-testcases
+# Black-box Test Cases
 
-**Ticket ID**: PHASE-DWELL-TIME
-**Create date**: 2026-08-19
-**Author**: QA Designer (Claude)
-**Update date**: 2026-08-21
+**Ticket ID**: AC-TEST-COVERAGE  
+**Create date**: 2026-06-26  
+**Author**: nk_trung  
+**Update date**: 2026-06-26  
 
-> Toàn bộ test case dưới đây mô tả theo màn hình và kết quả nghiệp vụ, không dùng thuật ngữ kỹ
-> thuật (API/DTO/SQL). Màn hình liên quan: **PM Dashboard → mở 1 ticket → Ticket Detail Drawer**,
-> Card mới tên **"Phase Dwell Time"** nằm ngay dưới Card **"Phase"** hiện tại.
-> Đối chiếu dữ liệu cụ thể dùng trong các test case này ở file `test-data.md` (cùng thư mục).
+## Test Case Summary
 
-| ID | AC | Viewpoint | Dữ liệu tiền đề | Thủ tục | Input | Expected result | Priority | Note |
-|---|---|---|---|---|---|---|---|---|
-| BB-PHASE-DWELL-TIME-01 | AC-1 | Normal | Ticket test `DEMO-DWELL-01` đã được quét, có đủ dữ liệu ngày tạo/cập nhật hợp lệ cho cả 7 hồ sơ thuộc 7 giai đoạn (xem `test-data.md` § Dữ liệu normal, bộ ND-1) | 1. Mở PM Dashboard.<br>2. Tìm và click vào ticket `DEMO-DWELL-01` để mở màn hình chi tiết ticket.<br>3. Quan sát Card "Phase Dwell Time" ngay dưới Card "Phase". | Không có (chỉ xem) | Card "Phase Dwell Time" hiển thị đúng **7 dòng**, theo đúng thứ tự: Spec Pack → Implementation Plan → Review Checklist → Self Review → Test Plan → Test Results → Report. Mỗi dòng có tên giai đoạn + 1 giá trị thời gian dạng `giờ:phút:giây`. | P0 | Đây là test xác nhận layout cơ bản, phải PASS trước khi chạy các case khác |
-| BB-PHASE-DWELL-TIME-02 | AC-1 | Normal (loại trừ) | Cùng ticket `DEMO-DWELL-01` ở BB-01 | 1. Mở Ticket Detail của `DEMO-DWELL-01`.<br>2. Đọc kỹ toàn bộ danh sách trong Card "Phase Dwell Time". | Không có | Card **không** hiển thị bất kỳ dòng nào có tên "Safety Review" (0-A), "AI Guard" (0-B, nếu có), "Development" (giai đoạn 2), hay "Closed/Done" (giai đoạn 9) — chỉ đúng 7 giai đoạn liệt kê ở BB-01. | P0 | Đối chiếu danh sách loại trừ ở `test-data.md` § Dữ liệu chung |
-| BB-PHASE-DWELL-TIME-03 | AC-2 | Normal | Ticket `DEMO-DWELL-01`, giai đoạn "Spec Pack" có 1 hồ sơ với ngày tạo `2026-08-19 09:00:00` và ngày cập nhật `2026-08-19 12:20:00` (bộ ND-1) | 1. Mở Ticket Detail của `DEMO-DWELL-01`.<br>2. Nhìn dòng "Spec Pack" trong Card "Phase Dwell Time". | Không có | Dòng "Spec Pack" hiển thị đúng **"03:20:00"** (3 giờ 20 phút 0 giây — đúng bằng khoảng cách giữa 2 mốc thời gian trên) | P0 | |
-| BB-PHASE-DWELL-TIME-04 | AC-2 | Normal (cộng dồn) | Ticket `DEMO-DWELL-02`, giai đoạn "Test Plan" có **2 hồ sơ**, cả 2 đều đủ ngày tạo/cập nhật (bộ ND-2: hồ sơ A mất 1 giờ, hồ sơ B mất 2 giờ 30 phút) | 1. Mở Ticket Detail của `DEMO-DWELL-02`.<br>2. Nhìn dòng "Test Plan". | Không có | Dòng "Test Plan" hiển thị **tổng cộng** thời gian của cả 2 hồ sơ: **"03:30:00"** (1 giờ + 2 giờ 30 phút), không chỉ hiển thị của 1 hồ sơ | P0 | Xác nhận đúng công thức "cộng dồn nhiều hồ sơ trong cùng giai đoạn" |
-| BB-PHASE-DWELL-TIME-05 | AC-2 | Boundary (vượt 24 giờ) | Ticket `DEMO-DWELL-03`, giai đoạn "Self Review" có 1 hồ sơ mất hơn 1 ngày để hoàn thành: tạo `2026-08-18 08:00:00`, cập nhật `2026-08-19 11:20:05` (bộ ND-3) | 1. Mở Ticket Detail của `DEMO-DWELL-03`.<br>2. Nhìn dòng "Self Review". | Không có | Dòng "Self Review" hiển thị **"27:20:05"** (27 giờ, không bị rút gọn/tính sai thành "03:20:05") | P0 | Đây là ca dễ bị lập trình sai (nhầm giờ về đồng hồ 24h) — bắt buộc kiểm tra kỹ |
-| BB-PHASE-DWELL-TIME-06 | AC-2 | Boundary (bằng 0) | Ticket `DEMO-DWELL-04`, giai đoạn "Report" có 1 hồ sơ có ngày tạo = ngày cập nhật = `2026-08-20 10:00:00` (bộ ND-4) | 1. Mở Ticket Detail của `DEMO-DWELL-04`.<br>2. Nhìn dòng "Report". | Không có | Dòng "Report" hiển thị **"00:00:00"**, **không** hiển thị dấu gạch ngang `"-"` (0 giây vẫn là 1 giá trị hợp lệ, khác với "không có dữ liệu") | P1 | Dễ nhầm lẫn giữa "0 giây" và "không tính được" |
-| BB-PHASE-DWELL-TIME-07 | AC-3 | Abnormal (thiếu dữ liệu hoàn toàn) | Ticket `DEMO-DWELL-05` mới tạo, giai đoạn "Test Results" **chưa từng có** hồ sơ nào được ghi nhận ngày tạo (bộ ND-5) | 1. Mở Ticket Detail của `DEMO-DWELL-05`.<br>2. Nhìn dòng "Test Results". | Không có | Dòng "Test Results" hiển thị dấu gạch ngang **"-"**, không hiển thị "00:00:00", không hiển thị số 0, không để trống dòng | P0 | Phân biệt rõ "chưa có dữ liệu" (`-`) và "có dữ liệu bằng 0" (`00:00:00`, xem BB-06) |
-| BB-PHASE-DWELL-TIME-08 | AC-4 | Abnormal (thiếu 1 nửa cặp) | Ticket `DEMO-DWELL-06`, giai đoạn "Review Checklist" có đúng 1 hồ sơ, có ngày tạo `2026-08-19 09:00:00` nhưng **chưa có** ngày cập nhật (hồ sơ chưa hoàn tất, bộ ND-6) | 1. Mở Ticket Detail của `DEMO-DWELL-06`.<br>2. Nhìn dòng "Review Checklist". | Không có | Dòng "Review Checklist" hiển thị **"-"** (không hiển thị thời gian tính từ lúc tạo tới hiện tại, không hiển thị giá trị ước lượng nào) | P0 | |
-| BB-PHASE-DWELL-TIME-09 | AC-4 | Boundary (trộn đủ cặp và thiếu cặp) | Ticket `DEMO-DWELL-07`, giai đoạn "Implementation Plan" có **2 hồ sơ**: hồ sơ A đủ cặp ngày tạo/cập nhật (mất 1 giờ), hồ sơ B chỉ có ngày tạo, chưa có ngày cập nhật (bộ ND-7) | 1. Mở Ticket Detail của `DEMO-DWELL-07`.<br>2. Nhìn dòng "Implementation Plan". | Không có | Dòng "Implementation Plan" hiển thị **"01:00:00"** — chỉ tính từ hồ sơ A đủ cặp, hồ sơ B chưa hoàn tất không được cộng vào (không hiển thị "-" vì đã có ít nhất 1 hồ sơ đủ cặp) | P0 | Ca dễ sai nếu lập trình cộng nhầm cả hồ sơ B |
-| BB-PHASE-DWELL-TIME-10 | AC-6 | State transition (quét lại nhiều lần) | Ticket `DEMO-DWELL-01` đã có kết quả ở BB-03 ("Spec Pack" = "03:20:00"), nội dung hồ sơ Spec Pack **không thay đổi** | 1. Ghi lại giá trị dòng "Spec Pack" hiện tại.<br>2. Yêu cầu vận hành chạy lại việc quét ticket `DEMO-DWELL-01` (không sửa nội dung file).<br>3. Mở lại Ticket Detail, nhìn dòng "Spec Pack" lần nữa.<br>4. Lặp lại bước 2-3 thêm 1 lần nữa (quét lần 3). | Không có | Giá trị dòng "Spec Pack" **giữ nguyên "03:20:00"** sau mỗi lần quét lại, dù quét bao nhiêu lần, miễn nội dung file không đổi | P1 | Đây là ca "double submit" ở mức vận hành (chạy trùng thao tác quét) |
-| BB-PHASE-DWELL-TIME-11 | AC-6 (nghiệp vụ liên quan) | State transition (dữ liệu thay đổi thật) | Ticket `DEMO-DWELL-08`, giai đoạn "Spec Pack" đang hiển thị "-" (hồ sơ chưa có ngày cập nhật) | 1. Yêu cầu người phụ trách cập nhật hồ sơ Spec Pack của ticket (thêm ngày cập nhật thật vào file).<br>2. Yêu cầu vận hành quét lại ticket.<br>3. Mở lại Ticket Detail, nhìn dòng "Spec Pack". | Không có | Sau khi nội dung hồ sơ thay đổi thật và quét lại, dòng "Spec Pack" **cập nhật sang giá trị thời gian mới** (không còn là "-"), đúng bằng khoảng cách ngày tạo/cập nhật mới | P1 | Phân biệt với BB-10: nội dung có đổi thật thì giá trị phải đổi theo |
-| BB-PHASE-DWELL-TIME-12 | AC-7 | Regression (không ảnh hưởng chức năng cũ) | Ticket `DEMO-DWELL-01` đang ở giai đoạn "Implementation Plan" (hiển thị ở Card "Phase" hiện tại, phía trên Card mới) | 1. Mở Ticket Detail của `DEMO-DWELL-01`.<br>2. Đọc thông tin ở Card "Phase" (giai đoạn hiện tại) — ghi lại giá trị.<br>3. Cuộn xuống xem Card "Phase Dwell Time" ngay bên dưới.<br>4. So sánh giá trị Card "Phase" trước và sau khi có Card mới (đối chiếu với ảnh chụp màn hình trước khi triển khai tính năng, nếu có). | Không có | Card "Phase" (giai đoạn hiện tại) hiển thị **đúng như trước khi có tính năng mới** — vẫn là "Implementation Plan", không đổi tên, không đổi mô tả, không đổi ngày. Card mới chỉ thêm bên dưới, không thay thế hay chỉnh sửa Card cũ | P0 | Test bắt buộc để đảm bảo tính năng mới không phá vỡ tính năng cũ |
-| BB-PHASE-DWELL-TIME-13 | AC-8 | Normal (đa ngôn ngữ) | Bất kỳ ticket nào đã có dữ liệu (vd `DEMO-DWELL-01`) | 1. Chuyển ngôn ngữ giao diện hệ thống sang **Tiếng Anh**.<br>2. Mở Ticket Detail của ticket.<br>3. Đọc tiêu đề Card mới. | Ngôn ngữ = English | Tiêu đề Card hiển thị đúng: **"Phase Dwell Time"** | P1 | |
-| BB-PHASE-DWELL-TIME-14 | AC-8 | Normal (đa ngôn ngữ) | Cùng ticket ở BB-13 | 1. Chuyển ngôn ngữ giao diện sang **Tiếng Nhật**.<br>2. Mở Ticket Detail của ticket.<br>3. Đọc tiêu đề Card mới, phóng to màn hình nếu cần để kiểm tra rõ từng chữ. | Ngôn ngữ = 日本語 | Tiêu đề Card hiển thị đúng: **"各フェーズの滞留時間"** — đủ chữ, đúng chữ Hán/Kana, không có ô vuông trống hoặc dấu `?` thay cho chữ bị lỗi | P1 | Kiểm tra kỹ lỗi font/mã hóa tiếng Nhật |
-| BB-PHASE-DWELL-TIME-15 | AC-8 | Normal (đa ngôn ngữ) | Cùng ticket ở BB-13 | 1. Chuyển ngôn ngữ giao diện sang **Tiếng Việt**.<br>2. Mở Ticket Detail của ticket.<br>3. Đọc tiêu đề Card mới, kiểm tra kỹ từng dấu câu tiếng Việt. | Ngôn ngữ = Tiếng Việt | Tiêu đề Card hiển thị đúng: **"Thời gian kẹt ở từng phase"** — đầy đủ dấu, không bị mất dấu/sai dấu | P1 | |
-| BB-PHASE-DWELL-TIME-16 | AC-10 | Abnormal (lỗi hệ thống khi tải dữ liệu) | Ticket bất kỳ; hệ thống backend mô phỏng tình huống gặp sự cố/quá thời gian chờ khi lấy dữ liệu Phase Dwell Time (yêu cầu đội kỹ thuật hỗ trợ tạo tình huống lỗi này trong môi trường test) | 1. Mở Ticket Detail của ticket trong lúc backend đang gặp sự cố lấy dữ liệu Dwell Time.<br>2. Quan sát toàn bộ màn hình. | Không có | Màn hình Ticket Detail vẫn **mở được bình thường**, không bị treo, không hiện thông báo lỗi hay màn hình trắng. Các giai đoạn bị ảnh hưởng bởi sự cố hiển thị **"-"**. Các thông tin khác của ticket (Card "Phase", danh sách vấn đề mở, v.v.) **vẫn hiển thị bình thường** không bị ảnh hưởng. Hệ thống **không** tự động thử tải lại nhiều lần gây giật/lag màn hình | P0 | Test đảm bảo 1 sự cố nhỏ không làm sập cả màn hình |
-| BB-PHASE-DWELL-TIME-17 | AC-10 (liên quan, ngoại lệ dữ liệu) | Abnormal (dữ liệu ngày bị nhập sai) | Ticket `DEMO-DWELL-09`, giai đoạn "Spec Pack" có 1 hồ sơ mà **ngày cập nhật lại sớm hơn ngày tạo** (dữ liệu nhập sai — vd tạo `2026-08-20`, cập nhật `2026-08-19`, bộ ND-8) | 1. Mở Ticket Detail của `DEMO-DWELL-09`.<br>2. Nhìn dòng "Spec Pack". | Không có | Dòng "Spec Pack" hiển thị **"-"**, **không** hiển thị số âm hay thời gian vô lý (vd không được hiển thị dạng `-1:00:00`) | P0 | Ca dữ liệu lỗi hiếm gặp nhưng đã từng xảy ra trong thực tế — đã được xử lý, cần xác nhận lại |
-| BB-PHASE-DWELL-TIME-18 | Ngoài AC, external IF failure | Abnormal (lỗi kết nối nguồn khi quét) | Ticket `DEMO-DWELL-10`; trong lúc hệ thống quét dữ liệu ticket, kết nối tới kho lưu trữ mã nguồn (GitHub) bị gián đoạn tạm thời | 1. Yêu cầu đội kỹ thuật mô phỏng lỗi kết nối trong lúc quét ticket `DEMO-DWELL-10`.<br>2. Sau khi quá trình quét kết thúc (dù lỗi), mở Ticket Detail của ticket này.<br>3. Nhìn Card "Phase Dwell Time". | Không có | Các giai đoạn không đọc được dữ liệu do lỗi kết nối hiển thị **"-"**, không hiển thị dữ liệu sai lệch hay giá trị cũ không chính xác. Sau khi kết nối được khôi phục và quét lại thành công, giá trị được cập nhật đúng | P1 | |
-| BB-PHASE-DWELL-TIME-19 | Ngoài AC, double submit | Boundary (thao tác lặp nhanh) | Ticket `DEMO-DWELL-01` | 1. Mở Ticket Detail của ticket.<br>2. Đóng lại ngay lập tức.<br>3. Mở lại Ticket Detail của cùng ticket đó ngay lập tức, lặp lại 4-5 lần liên tục thật nhanh. | Không có | Mỗi lần mở lại, Card "Phase Dwell Time" hiển thị **đúng và ổn định** (không hiển thị 2 lần cùng 1 giai đoạn, không hiển thị thiếu dòng, không bị treo/đơ màn hình) | P2 | |
-| BB-PHASE-DWELL-TIME-20 | Ngoài AC, dữ liệu cũ | Normal (ticket cũ chưa quét lại) | Ticket cũ `LEGACY-DWELL-01`, đã tồn tại từ trước khi tính năng "Phase Dwell Time" ra mắt, **chưa được quét lại** lần nào sau khi tính năng lên môi trường thật | 1. Mở Ticket Detail của `LEGACY-DWELL-01`.<br>2. Nhìn toàn bộ Card "Phase Dwell Time". | Không có | Cả 7 dòng đều hiển thị **"-"** (chưa có dữ liệu nào được tính, vì ticket chưa được quét lại) — đây là hành vi **bình thường, không phải lỗi**, cho tới khi ticket được quét lại lần kế tiếp | P1 | Cần giải thích rõ cho người dùng cuối đây không phải bug |
-| BB-PHASE-DWELL-TIME-21 | AC-1, permission | Permission (được phép xem) | Người dùng đăng nhập với vai trò **Manager**, **Support Lead**, **Operation Admin**, hoặc **Support Agent** (4 vai trò được phép xem PM Dashboard) | 1. Đăng nhập với 1 trong 4 vai trò trên.<br>2. Vào PM Dashboard, mở 1 ticket bất kỳ có dữ liệu. | Không có | Người dùng xem được đầy đủ Card "Phase Dwell Time" như mô tả ở BB-01, không bị chặn quyền truy cập, không có sự khác biệt hiển thị giữa 4 vai trò này | P1 | Tính năng dùng chung quyền hiện có của PM Dashboard, không có quyền riêng |
-| BB-PHASE-DWELL-TIME-22 | Permission | Permission (không được phép) | Người dùng đăng nhập với vai trò **không có quyền xem PM Dashboard** (vd tài khoản chỉ có quyền xem module khác) | 1. Đăng nhập với tài khoản không có quyền.<br>2. Thử truy cập PM Dashboard/Ticket Detail. | Không có | Người dùng **không** truy cập được màn hình PM Dashboard/Ticket Detail nói chung (bị chặn theo đúng quy tắc phân quyền hiện có của hệ thống) — do đó cũng không nhìn thấy Card "Phase Dwell Time". Đây là hành vi phân quyền **có sẵn từ trước**, không phải quyền mới riêng cho tính năng này | P2 | Xác nhận tính năng mới không vô tình "hé lộ" thêm quyền xem nào |
-| BB-PHASE-DWELL-TIME-23 | AC-2, ký tự hiển thị | Boundary (định dạng số/ký tự) | Ticket `DEMO-DWELL-11`, giai đoạn "Test Results" có 1 hồ sơ mất "7 giờ 2 phút 5 giây" (bộ ND-9) | 1. Chuyển giao diện sang Tiếng Nhật (ngôn ngữ có ký tự toàn giác).<br>2. Mở Ticket Detail của `DEMO-DWELL-11`.<br>3. Phóng to, nhìn kỹ dòng "Test Results". | Không có | Hiển thị đúng **"07:02:05"** — luôn đủ 2 chữ số cho giờ/phút/giây (không hiển thị "7:2:5"), dùng **số và dấu hai chấm nửa độ rộng** (không lẫn số/dấu toàn giác kiểu Nhật dù đang ở giao diện tiếng Nhật) | P1 | Test viewpoint "loại ký tự/số/số toàn giác" |
-| BB-PHASE-DWELL-TIME-24 | AC-9 (kỹ thuật, xác nhận gián tiếp qua nghiệp vụ) | Regression (không phá vỡ dữ liệu cũ) | Toàn bộ ticket đã có trước khi triển khai tính năng (dữ liệu Card "Phase" hiện tại, danh sách vấn đề mở, điểm chất lượng bằng chứng, v.v. của các ticket cũ) | 1. Sau khi tính năng "Phase Dwell Time" được triển khai, mở lại vài ticket cũ bất kỳ đã xem trước đó.<br>2. Kiểm tra toàn bộ thông tin khác trên màn hình Ticket Detail (không chỉ Card mới). | Không có | Toàn bộ thông tin khác của ticket (giai đoạn hiện tại, vấn đề mở, điểm đánh giá, lịch sử...) **giữ nguyên như trước**, không bị mất/sai lệch dữ liệu do triển khai tính năng mới | P1 | Đây là cách xác nhận gián tiếp AC-9 (không đổi/xoá dữ liệu cũ) bằng quan sát nghiệp vụ — bản thân việc "không đổi cấu trúc lưu trữ" cần đội kỹ thuật xác nhận riêng qua review, không kiểm được thuần bằng thao tác màn hình |
-| BB-PHASE-DWELL-TIME-25 | AC-2, AC-4 | Boundary (1 hồ sơ lỗi + 1 hồ sơ hợp lệ cùng giai đoạn) | Ticket `DEMO-DWELL-12`, giai đoạn "Review Checklist" có **2 hồ sơ**: hồ sơ A hợp lệ (đóng góp 3 giờ), hồ sơ B có **ngày cập nhật sớm hơn ngày tạo** (dữ liệu nhập sai, cùng loại lỗi như BB-17 nhưng lần này đi kèm 1 hồ sơ hợp lệ khác trong cùng giai đoạn — bộ ND-10) | 1. Mở Ticket Detail của `DEMO-DWELL-12`.<br>2. Nhìn dòng "Review Checklist". | Không có | Dòng "Review Checklist" hiển thị **"03:00:00"** (chỉ tính hồ sơ A hợp lệ) — **không** hiển thị `"-"` (khác BB-17, vốn chỉ có 1 hồ sơ duy nhất và hồ sơ đó bị lỗi) và **không** hiển thị giá trị bị "ăn bớt"/cộng bù trừ bởi hồ sơ B lỗi (vd không ra `"02:00:00"`) | P0 | Ca dễ sai nếu lập trình cộng gộp cả hồ sơ lỗi vào tổng trước khi kiểm tra dấu — phân biệt với BB-09 (thiếu `update_date`, không phải ngày bị đảo) và BB-17 (chỉ 1 hồ sơ duy nhất, không có hồ sơ hợp lệ nào khác để so sánh) |
+| case ID | AC ID | priority | category | title | | status
+|---|---|---|---|---|---|
+| BB-001 | AC-TEST-COVERAGE-1 | P0 | Normal | Extract stable AC keys from `spec-pack.md` | PASS |
+| BB-002 | AC-TEST-COVERAGE-2 | P0 | Normal | Derive planned coverage only from `test-plan.md` | PASS |
+| BB-003 | AC-TEST-COVERAGE-3 | P0 | Error | Show `MISSING` when an AC has no planned test coverage | PASS |
+| BB-004 | AC-TEST-COVERAGE-4 | P0 | Boundary | Show `UNTESTED` when planned coverage has no execution evidence |
+| BB-005 | AC-TEST-COVERAGE-5 | P0 | Boundary | Show `PARTIAL` for incomplete many-to-many coverage | PASS |
+| BB-006 | AC-TEST-COVERAGE-6 | P0 | Error | Resolve conflicting pass/fail evidence as `FAILED` | PASS |
+| BB-007 | AC-TEST-COVERAGE-7 | P0 | Normal | Render dashboard coverage as `AC -> test cases` | PASS |
+| BB-008 | AC-TEST-COVERAGE-8 | P1 | Operation | Expose `First CI Pass` and `Exception` KPI signals | PASS |
+| BB-009 | AC-TEST-COVERAGE-9 | P0 | Permission | Reject manual mapping or pinning attempts | PASS |
+| BB-010 | AC-TEST-COVERAGE-10 | P0 | Audit | Persist warnings and data-quality issues when parsing or linking fails | PASS |
+| BB-011 | AC-TEST-COVERAGE-1, AC-TEST-COVERAGE-10 | P1 | Boundary | Handle a ticket with zero ACs without inventing coverage | PASS |
+| BB-012 | AC-TEST-COVERAGE-2, AC-TEST-COVERAGE-10 | P1 | Error | Warn on unknown AC references and malformed source blocks | PASS |
+
+## Test Cases
+
+### BB-001: Extract stable AC keys from `spec-pack.md`
+
+| item | content |
+|---|---|
+| Related AC | AC-AC-TEST-COVERAGE-1 |
+| Priority | P0 |
+| Category | Normal |
+| Preconditions | Synthetic ticket data `ND-001` provides a `spec-pack.md` snapshot with 10 numbered AC blocks and no duplicated keys. |
+| Input | Parse the synthetic `spec-pack.md` snapshot only. |
+| Steps | 1) Parse the spec pack 2) Inspect the emitted AC key list 3) Compare the keys with the numbered AC blocks in the source |
+| Expected Result | The output contains stable ticket-scoped AC keys (`AC-TEST-COVERAGE-1` through `AC-TEST-COVERAGE-10`) and no invented AC. |
+| Note | This case verifies source-of-truth extraction without depending on parser internals. |
+
+### BB-002: Derive planned coverage only from `test-plan.md`
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-2 |
+| Priority | P0 |
+| Category | Normal |
+| Preconditions | Synthetic ticket data `ND-001` includes a `test-plan.md` with explicit AC mappings and an unrelated markdown note with no approved mapping semantics. |
+| Input | Parse `spec-pack.md` plus `test-plan.md`; ignore the unrelated note. |
+| Steps | 1) Parse the spec pack 2) Parse the test plan 3) Compare the planned coverage output with the AC references in `test-plan.md` |
+| Expected Result | Planned coverage is derived only from `test-plan.md`; unrelated text does not create, rename, or extend any AC mapping. |
+| Note | This protects the canonical planned-coverage source rule. |
+
+### BB-003: Show `MISSING` when an AC has no planned test coverage
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-3 |
+| Priority | P0 |
+| Category | Error |
+| Preconditions | Synthetic ticket data `ED-001` contains an AC in `spec-pack.md` but no matching row in `test-plan.md`. |
+| Input | Parse the spec pack and the incomplete test plan. |
+| Steps | 1) Parse the source set 2) Query the ticket coverage view 3) Inspect the row for the uncovered AC |
+| Expected Result | The uncovered AC is shown as `MISSING`, and the system does not fabricate a planned test case. |
+| Note | No silent fallback is allowed. |
+
+### BB-004: Show `UNTESTED` when planned coverage has no execution evidence
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-4 |
+| Priority | P0 |
+| Category | Boundary |
+| Preconditions | Synthetic ticket data `ND-002` has planned coverage in `test-plan.md` but no matching `test-results.md` evidence for the target AC. |
+| Input | Parse `spec-pack.md` and `test-plan.md` only, then read the coverage view. |
+| Steps | 1) Parse the two sources 2) Query the ticket coverage view 3) Inspect the AC row and status |
+| Expected Result | The AC is shown as `UNTESTED`; planned coverage is visible, but execution evidence is absent. |
+| Note | Planned coverage must not be promoted to executed coverage. |
+
+### BB-005: Show `PARTIAL` for incomplete many-to-many coverage
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-5 |
+| Priority | P0 |
+| Category | Boundary |
+| Preconditions | Synthetic ticket data `ND-003` has one AC linked to two planned test cases, but only one of the two has matching execution evidence. |
+| Input | Parse all available synthetic sources for the ticket. |
+| Steps | 1) Parse spec, plan, and results 2) Query the ticket coverage view 3) Compare the status with the planned/executed linkage count |
+| Expected Result | The AC is shown as `PARTIAL`; the view makes incomplete coverage explicit rather than hiding it. |
+| Note | This case covers the many-to-many boundary. |
+
+### BB-006: Resolve conflicting pass/fail evidence as `FAILED`
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-6 |
+| Priority | P0 |
+| Category | Error |
+| Preconditions | Synthetic ticket data `ED-004` contains both pass and fail evidence for the same AC, plus an optional CI summary that is otherwise compatible with the pass evidence. |
+| Input | Parse the spec pack, test plan, test results, and CI summary. |
+| Steps | 1) Parse all sources 2) Inspect the final coverage status 3) Inspect the warning or conflict signal |
+| Expected Result | The final status is `FAILED`; pass evidence does not override fail evidence. A conflict warning is visible to operators. |
+| Note | Fail wins over pass, exactly as the spec requires. |
+
+### BB-007: Render dashboard coverage as `AC -> test cases`
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-7 |
+| Priority | P0 |
+| Category | Normal |
+| Preconditions | Synthetic ticket data `ND-001` contains several AC rows with nested test-case links and execution evidence. |
+| Input | Open the ticket coverage read surface for the synthetic ticket. |
+| Steps | 1) Open the dashboard surface 2) Expand the ticket 3) Inspect the row grouping and nesting order |
+| Expected Result | The top-level grouping is AC-first, and linked test cases appear underneath each AC instead of the other way around. |
+| Note | This is a black-box read-model check, not a UI implementation check. |
+
+### BB-008: Expose `First CI Pass` and `Exception` KPI signals
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-8 |
+| Priority | P1 |
+| Category | Operation |
+| Preconditions | Synthetic ticket data `ND-004` includes one run that is the first CI pass and one later run that produces a warning / exception signal. |
+| Input | Open the dashboard KPI surface or the ticket coverage read model. |
+| Steps | 1) Load the synthetic ticket 2) Inspect the KPI fields 3) Compare the fields with the seeded evidence chronology |
+| Expected Result | `First CI Pass` and `Exception` are both visible when the underlying evidence exists, and the values stay aligned with the seeded run chronology. |
+| Note | The KPI is supporting information, not a blocking gate. |
+
+### BB-009: Reject manual mapping or pinning attempts
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-9 |
+| Priority | P0 |
+| Category | Permission |
+| Preconditions | Synthetic permission data includes `admin-user`, `viewer-user`, and `anonymous`; the flow attempts to save a manual override for a planned coverage row. |
+| Input | Try to persist a manual mapping/pinning action from any role. |
+| Steps | 1) Open the read surface as admin or viewer 2) Attempt the manual mapping / pinning action 3) Observe the system response |
+| Expected Result | Manual mapping or pinning is unavailable or rejected; the system remains parser-only and does not persist a user-authored coverage override. |
+| Note | Read-only access and write prohibition are both validated from the outside. |
+
+### BB-010: Persist warnings and data-quality issues when parsing or linking fails
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-10 |
+| Priority | P0 |
+| Category | Audit |
+| Preconditions | Synthetic error data `ED-001`, `ED-002`, and `ED-003` produce missing coverage, missing execution evidence, or unknown AC reference signals. |
+| Input | Run the parse flow for the synthetic ticket set and inspect the observable warnings / audit output. |
+| Steps | 1) Parse the sources 2) Query the warning / audit surface 3) Confirm the warning is attached to the ticket or run |
+| Expected Result | Warnings and data-quality issues are persisted and visible; the system does not fail silently. |
+| Note | This case is about operational auditability. |
+
+### BB-011: Handle a ticket with zero ACs without inventing coverage
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-1, AC-TEST-COVERAGE-10 |
+| Priority | P1 |
+| Category | Boundary |
+| Preconditions | Synthetic boundary data `BD-001` contains a `spec-pack.md` snapshot whose AC section is empty or absent. |
+| Input | Parse the empty / zero-AC spec pack together with any associated ticket metadata. |
+| Steps | 1) Parse the source set 2) Read the coverage view 3) Inspect the warnings and AC list |
+| Expected Result | The system does not invent ACs or synthetic coverage rows; the ticket is flagged with a warning / data-quality issue. |
+| Note | This is the zero-value boundary for the AC source. |
+
+### BB-012: Warn on unknown AC references and malformed source blocks
+
+| item | content |
+|---|---|
+| Related AC | AC-TEST-COVERAGE-2, AC-TEST-COVERAGE-10 |
+| Priority | P1 |
+| Category | Error |
+| Preconditions | Synthetic error data `ED-003` includes an unknown AC key in `test-plan.md`; `ED-005` includes a malformed or unsupported source block. |
+| Input | Parse the source set that contains the unknown reference / malformed block. |
+| Steps | 1) Run the parser 2) Inspect the coverage and warning outputs 3) Verify that the unknown reference is not accepted as a valid AC mapping |
+| Expected Result | The system raises a visible warning or data-quality issue for the unknown reference / malformed block and does not treat it as valid planned coverage. |
+| Note | This protects the canonical mapping contract and the source-format boundary. |
+
+## AC ↔ Black-box Mapping
+
+| AC ID | Black-box case IDs | Covered viewpoint |
+|---|---|---|
+| AC-TEST-COVERAGE-1 | BB-001, BB-011 | Normal / Boundary |
+| AC-TEST-COVERAGE-2 | BB-002, BB-012 | Normal / Error |
+| AC-TEST-COVERAGE-3 | BB-003 | Error |
+| AC-TEST-COVERAGE-4 | BB-004 | Boundary |
+| AC-TEST-COVERAGE-5 | BB-005 | Boundary |
+| AC-TEST-COVERAGE-6 | BB-006 | Error |
+| AC-TEST-COVERAGE-7 | BB-007 | Normal / Operation |
+| AC-TEST-COVERAGE-8 | BB-008 | Operation |
+| AC-TEST-COVERAGE-9 | BB-009 | Permission |
+| AC-TEST-COVERAGE-10 | BB-010, BB-011, BB-012 | Audit / Boundary / Error |
+
+## Viewpoints Covered
+
+- [x] Normal case
+- [x] Error case
+- [x] Boundary value
+- [x] Permission difference
+- [ ] State transition
+- [ ] Character type input
+- [ ] Numeric input
+- [ ] Full-width number
+- [x] Empty/null
+- [x] Duplicate
+- [x] Non-existing ID
+- [x] Deleted data
+- [x] External IF failure
+- [ ] Timeout/retry
+- [x] Double submit
+- [x] Back/reload
+- [ ] Session expired
+- [x] Existing data compatibility
+- [x] Log/audit/notification/report output

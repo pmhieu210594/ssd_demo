@@ -1,345 +1,159 @@
-# context.md
+# Context
 
-**Ticket ID**: PHASE-DWELL-TIME
-**Vai trò**: Tech Lead — chuẩn bị context/rule riêng để AI implement không hiểu
-sai codebase hiện có.
-**Create date**: 2026-08-19
-**Update date**: 2026-08-20
+**Ticket ID**: AC-TEST-COVERAGE
+**Create date**: 2026-06-26  
+**Author**: OpenAI
+**Update date**: 2026-06-26  
+## Screen / API / Batch / Related Job
 
----
+| type | name / route | status | note |
+|---|---|---|---|
+| Screen | `HomePage` (`/:lang/`) | Exists | Dashboard landing surface; future AC coverage widgets should render as read-only summary here or in sibling dashboard tabs. |
+| Screen | `ProjectPage` / `RepositoryPage` | Exists | Upstream context surfaces for project/repository scoped evidence. |
+| Screen | `TraceabilityPage` (`/:lang/traceability`) | Exists | Existing ticket-evidence read model to mirror for AC-first coverage output. |
+| API | `POST /api/v1/demo/test-plan-parses` | Exists | Parse and persist `test-plan.md`; planned coverage source. |
+| API | `POST /api/v1/demo/test-results-parses` | Exists | Parse and persist `test-results.md`; executed evidence source. |
+| API | `POST /api/v1/demo/parse-markdown` | Exists | General parser entrypoint used by the same markdown normalization stack. |
+| API | `POST /api/v1/data-ops/artifact-scans` | Exists | Admin scan entrypoint for ticket artifact inventory and parser orchestration. |
+| API | `POST /api/v1/webhooks/github` | Exists | Upstream CI/PR evidence ingress for build/test linkage. |
+| API | `GET /api/v1/traceability/{ticketId}` | Exists | Existing read model for ticket evidence flow; useful reference for dashboard-style outputs. |
+| Batch / Job | `ArtifactScannerService` | Exists | Orchestrates artifact parsing and evidence persistence. |
+| Batch / Job | `TestPlanParseService.parseAndStore(...)` | Exists | Planned coverage ingestion. |
+| Batch / Job | `TestResultsParseService.parseAndStore(...)` | Exists | Executed evidence ingestion. |
+| Batch / Job | `GithubWebhookService.handle(...)` / `GithubWorkflowJobWebhookService` | Exists | CI-related evidence and workflow-job metadata. |
 
-## File đã đọc
+## Example of a correctly implemented code
 
-**Database / migration:**
-- `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` —
-  `tbl_fact_artifact_snapshot` (dòng 383-412, toàn bộ cột + constraint),
-  `tbl_dim_phase` (195-205), `tbl_dim_artifact_type` (207-219).
-- `EDCAP_BE/src/main/resources/db/migration/V160__artifact_scanner.sql`,
-  `V161__artifact_scanner_ticket_status.sql`,
-  `V503__artifact_snapshot_schema_version_numeric.sql` — 3 bản định nghĩa
-  khác nhau của `vw_artifact_inventory_current` (view bị `CREATE OR
-  REPLACE`/`CREATE VIEW` lại nhiều lần).
-
-**Backend (đọc toàn văn hoặc đoạn quan trọng):**
-- `application/usecase/phase/TicketPhaseEvaluatorService.java` (toàn bộ) —
-  service xác định "current phase" hiện tại, KHÔNG phải nguồn cho Dwell Time.
-- `application/usecase/scanner/ArtifactScannerService.java` —
-  `scanTicketDirectory` (280-370), `buildSnapshot` (1495-1573),
-  `CHANGE_TARGET_FILES`/`PHASE0_TARGET_FILES` (60-77).
-- `infrastructure/persistence/adapter/scanner/ArtifactScannerJdbcAdapter.java`
-  — `findLatestSnapshot`, `insertSnapshot`, `updateSnapshot`,
-  `updateSnapshotParsedSummary`, `upsertTicketPhaseStatus`.
-- `infrastructure/persistence/adapter/PmDashboardJdbcAdapter.java` —
-  `findDetail` (215-270, toàn bộ query + construction record).
-- `application/usecase/pmdashboard/PmDashboardService.java` (method
-  `detail(...)`, `refresh(...)`).
-- `application/usecase/pmdashboard/PmDashboardModels.java` (record
-  `DashboardTicketDetail`, `ScoreBreakdown`).
-- `web/rest/PmDashboardController.java` (toàn bộ).
-- `web/dto/PmDashboardDtos.java` (toàn bộ).
-- `application/port/out/persistence/PmDashboardRepositoryPort.java` (xác
-  nhận method `findDetail` qua grep).
-- `domain/service/markdown/core/MarkdownParserCore.java` (toàn bộ cơ chế
-  `extractHeaderMetadata`, `TOP_META_PATTERN`, `normalizeMetadataKey`).
-- `domain/service/markdown/{specpack,selfreview,reviewchecklist,report}/*Parser.java`
-  — xác nhận cả 4 dùng `MarkdownParserCore`, có sẵn `headerMetadata`.
-- `application/usecase/docparse/{ImplPlanParseService,TestPlanParseService,TestResultsParseService}.java`
-  — xác nhận KHÔNG dùng `MarkdownParserCore` (kiến trúc khác).
-- `test/UnitTest/.../phase/TicketPhaseEvaluatorServiceTest.java` (toàn văn,
-  154 dòng).
-
-**Frontend (đọc toàn văn):**
-- `pages/pm-dashboard/components/TicketDetailDrawer.tsx` (toàn bộ, gồm
-  `PhaseCard` dòng 115-157).
-- `__ tests __/pm-dashboard/TicketDetailDrawer.test.tsx` (toàn bộ, 267 dòng).
-
-**Frontend (đọc một phần / grep):**
-- `lib/api.ts` (`PmDashboardTicketRow`, `PmDashboardTicketDetail`, block
-  `pmDashboard` trong `endpoints`).
-- `lib/utils.ts` (`formatDateTime`).
-- `public/locales/{en,ja}/locale.json` (namespace `Pages.PmDashboard`, xác
-  nhận ký tự tiếng Nhật literal UTF-8, không escape `\uXXXX`).
-
-**Template ticket (đọc để xác nhận header tồn tại ở mọi loại file):**
-- `docs/standards/templates/_ticket-template/{spec-pack,impl-plan,review-checklist,self-review,test-plan,test-results,report,blackbox-testcases}.md`
-  — tất cả đều có header `**Create date**`/`**Update date**`.
-
----
-
-## Implementation tương tự
-
-| Flow | Vai trò tham khảo | Đã đọc mức nào |
+| purpose | file/path | pattern to follow |
 |---|---|---|
-| **PM Dashboard ticket detail** (`PmDashboardService.detail` → `PmDashboardJdbcAdapter.findDetail`) | Domain chính sẽ mở rộng — pattern hexagonal đầy đủ (Service mỏng → Port → JDBC Adapter `NamedParameterJdbcTemplate` + SQL text block → Controller → DTO record `from(...)`) | Toàn văn các đoạn liên quan |
-| **Artifact Scanner** (`application/usecase/scanner/`) | Nguồn dữ liệu gốc (`tbl_fact_artifact_snapshot`) và luồng đọc blob nội dung file (`source.readBlob`) | Đọc kỹ `scanTicketDirectory`, `buildSnapshot` toàn văn |
-| **`MarkdownParserCore`** | Cơ chế generic đọc header `**Key**: Value` của mọi file `.md` — nền tảng kỹ thuật cho service mới của ticket này | Toàn văn |
-| **4 parser dùng `MarkdownParserCore`** (`SpecPackMarkdownParser`, `ReviewChecklistMarkdownParser`, `SelfReviewMarkdownParser`, `ReportMarkdownParser`) | Ví dụ cách 1 parser lấy `headerMetadata` từ `MarkdownDocument` | Đọc đoạn liên quan |
-| **TicketPhaseEvaluatorService** | Cách hệ thống xác định "current phase" — khác hoàn toàn khái niệm phase-timeline mới | Toàn văn |
-| **Security Dashboard** (`docs/changes/SECURITY-FINDING-RESOLUTION-TIME/`) | Ticket khác đã làm xong "Tech Lead prep" tương tự — dùng làm template cấu trúc cho 3 file này | Đọc toàn văn 3 file làm mẫu |
+| AC source of truth lookup | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/AcCoverageJdbcAdapter.java` | Read active AC keys from `tbl_fact_acceptance_criteria` using a narrow query and no manual mapping. |
+| Coverage boundary validation | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestCoverageValidationService.java` | Compare AC IDs from spec vs matrix and emit warnings for uncovered / unknown references. |
+| Planned coverage ingestion | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestPlanParseService.java` | Parse, persist snapshot, validate AC coverage, and recalculate downstream evidence/quality hooks. |
+| Executed evidence ingestion | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestResultsParseService.java` | Parse results, validate against AC set, persist evidence, and keep warnings visible. |
+| Evidence persistence adapter | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/TestEvidenceJdbcAdapter.java` | Reuse existing `tbl_fact_ac_test_coverage` and `tbl_fact_test_run` write path. |
+| Score/read-model adapter | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/EvidenceQualityScoreRepositoryAdapter.java` | Reuse current SQL-style aggregation and read-model logic rather than computing on FE. |
+| Artifact orchestrator | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/scanner/ArtifactScannerService.java` | Batch-style parse orchestration with explicit persistence and warning propagation. |
 
----
+## Allowed common components
 
-## Pattern nên dùng
-
-1. **Đọc dữ liệu dashboard**: `NamedParameterJdbcTemplate` + SQL text block
-   (`"""..."""`), named parameter (`:paramName`) — đúng 100% style
-   `PmDashboardJdbcAdapter.findDetail` (dòng 215-270). Không dùng MyBatis
-   Mapper cho phần đọc mới.
-2. **Service mỏng**: `PmDashboardService.detail(...)` chỉ gọi
-   `repository.findDetail(...)` rồi `requirePm(...)`.
-3. **Trích `create_date`/`update_date` bằng 1 service mới dùng chung**: gọi
-   trực tiếp `new MarkdownParserCore().parse(blobContent,
-   sourcePath).headerMetadata()` trên nội dung blob (`source.readBlob(...)`,
-   đã có sẵn trong luồng scan) cho **cả 7 file mục tiêu** — không phụ thuộc
-   4 parser chuyên biệt hiện có, không phụ thuộc
-   `ImplPlanParseService`/`TestPlanParseService`/`TestResultsParseService`,
-   không cần viết parser "full" cho `blackbox-testcases.md`. Tên service cụ
-   thể do `impl-plan.md` đặt.
-4. **Lưu trữ**: `create_date`/`update_date` đã parse lưu vào **1 bảng mới
-   riêng** (ví dụ tên `tbl_fact_artifact_document_date` — `impl-plan.md`
-   chốt tên/schema chính xác), KHÔNG dùng chung `parsed_summary` (đã có 4
-   parser khác ghi vào, dễ xung đột). Cần 1 port/adapter method mới (ví dụ
-   `upsertArtifactDocumentDates(...)`) — không tái sử dụng
-   `updateSnapshotParsedSummary`.
-5. **Công thức**: Dwell Time 1 file = `update_date − create_date`. Dwell
-   Time 1 phase = **cộng dồn** `Σ(update_date − create_date)` của tất cả
-   file thuộc phase đó (mapping qua `tbl_dim_artifact_type.phase_id`).
-6. **DTO mapping**: mỗi model có DTO record riêng + static factory
-   `from(Model m)` — đúng pattern `PmDashboardDtos.java`.
-7. **Record bất biến, 1 nơi khởi tạo duy nhất**: `DashboardTicketDetail`
-   chỉ được tạo ở `PmDashboardJdbcAdapter.findDetail(...)` (dòng 259-269).
-8. **Exception**: `NotFoundException("Pages.PmDashboard.NotFound")` dùng lại
-   khi ticket không tồn tại.
-9. **Permission**: `service.requirePm(caller, detail.row().projectId())`.
-10. **FE type**: thêm field vào interface `PmDashboardTicketDetail` trong
-    `lib/api.ts` (named export).
-11. **FE hiển thị**: sửa hàm `PhaseCard` (dòng 115-157 của
-    `TicketDetailDrawer.tsx`) — thêm field mới ngay dưới `phaseCreatedAt`
-    (146-152), theo pattern `{t("Pages.PmDashboard.xxx", { defaultValue })}: {value}`.
-12. **i18n**: chỉ cần 1 key tên field mới (không nhãn trạng thái) ở cả 3
-    file `public/locales/{en,ja,vi}/locale.json` dưới `Pages.PmDashboard`.
-13. **`lib/api.ts` không cần sửa phần fetch** —
-    `endpoints.pmDashboard.detail(ticketId)` dùng generic
-    `api.get<PmDashboardTicketDetail>(...)`.
-14. **FE test**: theo đúng pattern `TicketDetailDrawer.test.tsx` — mock
-    `react-i18next`, dựng `detail` bằng `satisfies PmDashboardTicketDetail`,
-    render qua `MemoryRouter` + `QueryClientProvider`.
-
----
-
-## Pattern cấm dùng
-
-- **Không tạo endpoint mới** — field bổ sung vào response
-  `GET /api/v1/pm/dashboard/tickets/{ticketId}/detail` đã có.
-- **Không sửa `TicketPhaseEvaluatorService`**, `upsertTicketPhaseStatus`,
-  `tbl_fact_ticket_phase_status` — 2 khái niệm phase (current phase cũ vs.
-  phase timeline/dwell time mới) tồn tại song song.
-- **Không mở rộng `ArtifactScannerService.CHANGE_TARGET_FILES`/
-  `PHASE0_TARGET_FILES`**.
-- **Không ALTER/DROP** bảng hiện có (`tbl_fact_artifact_snapshot`,
-  `tbl_fact_ticket_phase_status`, ...) — chỉ được thêm bảng mới/VIEW mới
-  (Flyway migration mới, cần hỏi người dùng trước khi `flyway migrate` —
-  `00-safety.md §3`).
-- **Không dùng cột `created_at`/`collected_at`/`source_updated_at` của
-  `tbl_fact_artifact_snapshot` làm mốc Entry** — nguồn chính thức là
-  `create_date`/`update_date` tự khai báo trong header file `.md`.
-- **Không dùng chung cột `parsed_summary`** cho dữ liệu
-  `create_date`/`update_date` mới — dùng bảng mới riêng (xem "Pattern nên
-  dùng" #4).
-- **Không dùng MyBatis Mapper** cho phần đọc.
-- **Không dùng `@Data`** trên model mới nếu có — dùng
-  `@Builder @Getter @Setter @NoArgsConstructor @AllArgsConstructor`.
-- **Không field-inject `@Autowired`** — constructor injection.
-- **Không gọi `fetch` trực tiếp ở FE**, không dùng `any` không có comment
-  `// reason:`.
-- **Không dùng default export** ở file FE nào được sửa/tạo mới.
-- **Không tự thêm `React.forwardRef`** cho các hàm Card trong
-  `TicketDetailDrawer.tsx` — function component nội bộ của trang, không
-  phải component tái sử dụng trong `components/ui/`.
-- **Không hiển thị nhãn trạng thái nào** (Pending/Completed/InProgress) —
-  chỉ 1 giá trị Dwell Time hoặc `"-"`.
-- **Không dùng `vw_artifact_inventory_current`** làm nguồn cho Dwell Time
-  nếu chưa xác nhận migration mới nhất định nghĩa nó (đã bị định nghĩa lại
-  ≥3 lần: `V160`, `V161`, `V503`).
-
----
-
-## Method tồn tại / method không tồn tại
-
-### Method THỰC SỰ tồn tại (được phép gọi)
-
-**`PmDashboardService`**: `summary(...)`, `insights(...)`, `tickets(...)`,
-`detail(ticketId, caller)`, `refresh(caller)`, `options(projectId, caller)`,
-`getTemplateUsage(...)`, `exportCsv(...)`, `requirePm(caller, projectId)`,
-`requireAnyAccess(caller)`.
-
-**`PmDashboardRepositoryPort`** (interface): `findDetail(UUID ticketId)` →
-`Optional<DashboardTicketDetail>` (các method khác suy ra từ cách gọi
-trong Service, chưa đọc toàn bộ chữ ký interface).
-
-**`PmDashboardJdbcAdapter`**: `findDetail(ticketId)` (215-270),
-`findTickets(...)`, `findAttentionTickets(...)`, cùng helper `private`
-(`countReviews`, `findMissingEvidence`, `findRisks`, `findExceptions`,
-`findIssueItems`, `findScoreBreakdown`, `mapTicketRow`, ...).
-
-**`DashboardTicketDetail`** (record): `row()`, `createdAt()`,
-`ownerDisplay()`, `reviewCount()`, `missingEvidenceItems()`, `riskItems()`,
-`exceptionItems()`, `issueItems()`, `scoreBreakdown()`, `traceabilityUrl()`.
-**Thêm field mới phải sửa cả record (`PmDashboardModels.java:266`) và nơi
-khởi tạo duy nhất (`PmDashboardJdbcAdapter.java:259`).**
-
-**`PmDashboardDtos.PmDashboardTicketDetailDto`** (record): tương tự — sửa
-cả record (`PmDashboardDtos.java:334`) và `from(...)` (`:346`).
-
-**`MarkdownParserCore`**: `parse(String content, String sourcePath)` →
-`MarkdownDocument` (public); `MarkdownDocument.headerMetadata()` → `Map<String,
-String>` với key normalize (`create_date`, `update_date`, `ticket_id`, ...).
-
-### Method / cột KHÔNG tồn tại — AI dễ tự bịa, TUYỆT ĐỐI KHÔNG dùng
-
-| Bị bịa ra (SAI) | Lý do sai | Thực tế |
+| component | path | usage note |
 |---|---|---|
-| `PmDashboardRepositoryPort.findPhaseDwellTime(...)` | Chưa tồn tại | Phải tự tạo mới ở `impl-plan.md` nếu chọn hướng port method riêng |
-| `ArtifactSnapshot.enteredAt()` / `getEntryTimestamp()` | Domain "Entry" chỉ tồn tại trong tài liệu ticket này | `ArtifactSnapshot` không có field "entry"/"detected" |
-| `tbl_fact_artifact_snapshot.created_at` = "thời điểm evidence xuất hiện" | **SAI đã xác minh bằng code** — `ArtifactScannerService.scanTicketDirectory` tạo dòng cho cả 7-8 file ngay từ lần scan đầu tiên (kể cả file chưa tồn tại), `created_at` không đổi sau đó dù file xuất hiện muộn hơn | Nguồn Entry chính thức là `create_date`/`update_date` parse từ header file `.md` |
-| `Duration.toString()` cho ra `"27:20:05"` | **Sai** — cho ra ISO-8601 (`"PT27H20M5S"`) | Phải tự viết formatter thủ công |
-| `formatDuration`/`DurationUtils` có sẵn trong `EDCAP_BE`/`EDCAP_FE` | Chưa tìm thấy qua các file đã đọc | Coi là chưa có, phải viết mới |
-| `PmDashboardModels.DashboardTicketDetail.withPhaseDwellTime(...)` | Record Java không tự sinh method `withXxx` | Tạo lại toàn bộ instance bằng constructor đầy đủ tham số |
-| `ImplPlanParseService`/`TestPlanParseService`/`TestResultsParseService` có sẵn `headerMetadata` | **Không** — 3 service này không dùng `MarkdownParserCore` | Service mới của ticket này gọi `MarkdownParserCore` trực tiếp, độc lập với 3 service trên |
-| Parser có sẵn cho `blackbox-testcases.md` | **Không tồn tại** — đã grep toàn bộ codebase, không có class nào | Dùng chung service mới (đọc header qua `MarkdownParserCore`), không cần viết parser "full" riêng cho file này |
-| `persistence.updateSnapshotParsedSummary(...)` dùng được cho `create_date`/`update_date` | Method này **ghi đè toàn bộ** cột `parsed_summary`, dùng lại sẽ xoá dữ liệu của 4 parser khác | Dùng bảng mới riêng + method mới, không tái sử dụng method này |
+| `SpecPackMarkdownParser` | `EDCAP_BE/src/main/java/com/sdd/platform/domain/service/markdown/specpack/SpecPackMarkdownParser.java` | Use only for spec-pack normalization / AC extraction if deeper spec parsing is needed later. |
+| `ArtifactNormalizer` | `EDCAP_BE/src/main/java/com/sdd/platform/domain/service/ArtifactNormalizer.java` | Shared markdown normalization and section extraction pipeline. |
+| `TestCoverageValidationService` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestCoverageValidationService.java` | Canonical AC mismatch warning helper. |
+| `AcCoveragePort` | `EDCAP_BE/src/main/java/com/sdd/platform/application/port/out/persistence/AcCoveragePort.java` | Returns active AC keys for a ticket. |
+| `TestEvidencePersistencePort` | `EDCAP_BE/src/main/java/com/sdd/platform/application/port/out/persistence/TestEvidencePersistencePort.java` | Planned/executed coverage persistence boundary. |
+| `CiRunRepositoryPort` | `EDCAP_BE/src/main/java/com/sdd/platform/application/port/out/persistence/CiRunRepositoryPort.java` | CI summary lookup and metadata reuse. |
+| `EvidenceQualityScoreService` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/quality/EvidenceQualityScoreService.java` | Existing downstream read-model recomputation hook. |
+| `tbl_fact_acceptance_criteria` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | AC master source. |
+| `tbl_fact_ac_test_coverage` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | AC ↔ test coverage fact table. |
+| `tbl_fact_test_run` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Test execution summary. |
+| `tbl_fact_test_case` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Per-case AC reference and status. |
+| `tbl_fact_ci_run` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | CI supporting evidence. |
+| `tbl_fact_evidence_event` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Parse / validation / compute audit trail. |
+| `tbl_fact_data_quality` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Parse warnings and linkage issues. |
+| `TraceIdFilter` | `EDCAP_BE/src/main/java/com/sdd/platform/config/TraceIdFilter.java` | Correlation id pattern for logs and persisted metadata. |
 
----
+## Forbidden common components
 
-## Mapping
+| component | reason |
+|---|---|
+| Manual AC ↔ test mapping UI or pinning logic | MVP is parser-only; manual mapping is explicitly out of scope. |
+| FE-side coverage recomputation | Dashboard must render a BE read model, not duplicate business rules. |
+| New table for coverage fact data | Reuse-first rule applies; schema already has the needed tables. |
+| Raw chat / raw prompt / full source storage | Prohibited by design and by ticket scope. |
+| Direct SQL in FE or non-port persistence bypass | Breaks layering and makes the flow non-testable. |
+| Nonexistent endpoints such as `/api/v1/ac-test-coverage` | No such API exists in current source. |
+| Hard-coded status labels outside canonical enums / constants | Keeps coverage semantics drift-free. |
 
-| DB column (`tbl_fact_artifact_snapshot`) | Dùng cho field này? | Ghi chú |
+## List of methods that actually exist
+
+| method/class | path | usage |
 |---|---|---|
-| `ticket_id` | ✅ Có | Filter theo ticket cho toàn bộ 7 phase (phase `0-A` ngoài scope) |
-| `artifact_type_id` → `tbl_dim_artifact_type.phase_id` | ✅ Có (join) | Nguồn phase-mapping chính thức, join tại thời điểm query (không tin cột `phase_id` denormalize sẵn trên snapshot nếu seed artifact_type từng đổi) |
-| `exists_flag` | ✅ Có | Điều kiện lọc file thực sự tồn tại |
-| `created_at`, `collected_at`, `source_updated_at` | ❌ Không dùng | Không phản ánh đúng thời điểm file xuất hiện/hoàn thành — xem "Method không tồn tại" |
-| `parsed_summary` | ❌ Không dùng cho field này | Đã có 4 parser khác ghi/ghi đè — dùng bảng mới riêng |
+| `AcCoveragePort.findActiveAcKeys(UUID)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/port/out/persistence/AcCoveragePort.java` | Returns active AC keys for a ticket. |
+| `AcCoverageJdbcAdapter.findActiveAcKeys(UUID)` | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/AcCoverageJdbcAdapter.java` | JDBC implementation of AC lookup. |
+| `TestCoverageValidationService.validateCoverage(List<String>, List<String>)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestCoverageValidationService.java` | Emits `AC_NOT_COVERED` and `UNKNOWN_AC_REFERENCE` warnings. |
+| `TestPlanParseService.parseAndStore(ParseRequest)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestPlanParseService.java` | Parses planned coverage and persists snapshot/evidence. |
+| `TestPlanParseService.detail(UUID)` | same | Returns parsed snapshot detail for a prior parse. |
+| `TestPlanParseService.recentSnapshots(UUID, ParseMode, int)` | same | Lists ticket snapshots for plan history. |
+| `TestResultsParseService.parseAndStore(ParseRequest)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/TestResultsParseService.java` | Parses executed evidence and persists result/test run data. |
+| `TestResultsParseService.detail(UUID)` | same | Returns parsed test results snapshot detail. |
+| `TestResultsParseService.recentSnapshots(UUID, ParseMode, int)` | same | Lists ticket snapshots for result history. |
+| `TestEvidencePersistencePort.replacePlannedCoverage(...)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/port/out/persistence/TestEvidencePersistencePort.java` | Replaces planned AC coverage rows for a ticket snapshot. |
+| `TestEvidencePersistencePort.upsertTestRun(...)` | same | Persists parsed test-run summary. |
+| `TestEvidenceJdbcAdapter.replacePlannedCoverage(...)` | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/docparse/TestEvidenceJdbcAdapter.java` | Writes `PLANNED` rows into `tbl_fact_ac_test_coverage`. |
+| `TestEvidenceJdbcAdapter.upsertTestRun(...)` | same | Upserts `tbl_fact_test_run` rows. |
+| `EvidenceQualityScoreRepositoryAdapter.loadTestSignal(...)` | `EDCAP_BE/src/main/java/com/sdd/platform/infrastructure/persistence/adapter/EvidenceQualityScoreRepositoryAdapter.java` | Reads AC coverage / test-run counts for downstream read models. |
+| `EvidenceQualityScoreRepositoryAdapter.loadAcceptanceCriteriaStats(...)` | same | Reads AC counts and format-valid counts. |
+| `ArtifactScannerService.scan(...)` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/scanner/ArtifactScannerService.java` | Batch orchestration and parser triggering. |
 
-**Nguồn dữ liệu mới cho Dwell Time (bảng mới, chưa tồn tại — cần tạo ở
-`impl-plan.md`):**
+## Forbidden methods / methods that do not exist
 
-| Bảng mới (tên đề xuất) | Cột đề xuất | Ghi chú |
+| method/API | reason | alternative |
 |---|---|---|
-| `tbl_fact_artifact_document_date` | `artifact_snapshot_id` (FK), `document_create_at` (TIMESTAMPTZ), `document_update_at` (TIMESTAMPTZ) | Lưu `create_date`/`update_date` đã parse từ header mỗi file; tên/schema chính xác do `impl-plan.md` chốt |
+| `manualMapAcToTestCase(...)` | Violates parser-only rule and user decision. | Use `TestPlanParseService` + `TestResultsParseService` + existing DB linkage. |
+| `pinCoverageStatus(...)` | Manual override is out of scope. | Let persisted evidence and validation determine status. |
+| `POST /api/v1/ac-test-coverage` | No such API in source. | Use existing parser / read-model endpoints. |
+| `getCoverageFromFrontend()` | FE should only render BE data. | Read the BE response model. |
+| `writeCoverageTableDirectly()` | Bypasses port/adapters and audit trail. | Use `TestEvidencePersistencePort` or existing service flow. |
+| `parseSpecPackWithoutSnapshot()` | Snapshot/audit is required for traceability. | Use parser services that persist snapshots. |
 
-**Model / DTO / FE chain (cần đồng bộ khi thêm field):**
+## DTO / Entity / Table / Migration mapping
 
-| Layer | Vị trí | Thay đổi cần thiết |
-|---|---|---|
-| DB | Bảng mới (đề xuất `tbl_fact_artifact_document_date`) | Migration mới, additive-only |
-| Application model | `PmDashboardModels.DashboardTicketDetail` (record, 266-277) | Thêm `List<...> phaseDwellTime` |
-| Adapter | `PmDashboardJdbcAdapter.findDetail(...)` (215-270) | Sửa 1 nơi khởi tạo (259-269) — thêm subquery đọc bảng mới, group theo phase |
-| Web DTO | `PmDashboardDtos.PmDashboardTicketDetailDto` (334-360) | Thêm field + cập nhật `from(...)` |
-| Controller | `PmDashboardController.detail(...)` (80-86) | Không cần sửa |
-| FE type | `lib/api.ts` (`PmDashboardTicketDetail`) | Thêm `phaseDwellTime: { phaseCode: string; phaseOrder: number; dwellTime: string | null }[]` |
-| FE hiển thị | `TicketDetailDrawer.tsx` → `PhaseCard` (115-157) | Thêm dòng hiển thị mới dưới `phaseCreatedAt` |
-| i18n | `public/locales/{en,ja,vi}/locale.json` → `Pages.PmDashboard` | Thêm 1 key tên field |
+| layer | name | path | Note |
+|---|---|---|---|
+| BE DTO | `TestDocParseDtos.*` | `EDCAP_BE/src/main/java/com/sdd/platform/web/dto/TestDocParseDtos.java` | Parse request/result DTOs for test-plan and test-results routes. |
+| BE model | `DocParseModels.ParseRequest` / `ParseResult` / `ParseSnapshot` | `EDCAP_BE/src/main/java/com/sdd/platform/application/usecase/docparse/DocParseModels.java` | Canonical parse data for docs. |
+| Domain/service | `ArtifactNormalizer.ParsedArtifact` | `EDCAP_BE/src/main/java/com/sdd/platform/domain/service/ArtifactNormalizer.java` | Markdown normalization result. |
+| Fact table | `tbl_fact_acceptance_criteria` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | AC master per ticket. |
+| Fact table | `tbl_fact_ac_test_coverage` | same | AC ↔ test coverage fact table. |
+| Fact table | `tbl_fact_test_run` | same | Parsed test run summary. |
+| Fact table | `tbl_fact_test_case` | same | Parsed test case / AC reference. |
+| Fact table | `tbl_fact_ci_run` | same | CI metadata used as supporting evidence. |
+| Fact table | `tbl_fact_evidence_event` | same | Parse/audit/event trail. |
+| Fact table | `tbl_fact_data_quality` | same | Parser warnings and linkage issues. |
+| Fact table | `tbl_fact_metric_value` | same | KPI storage for dashboard/read-model usage. |
+| Dimension | `tbl_dim_ticket` / `tbl_dim_repository` | same | Scope keys for all coverage rows. |
+| Migration | `V4__init_shema_v2.sql` | `EDCAP_BE/src/main/resources/db/migration/V4__init_shema_v2.sql` | Canonical schema for the MVP; do not edit in place. |
+| Migration | `V200__ci_run_metadata.sql` | `EDCAP_BE/src/main/resources/db/migration/V200__ci_run_metadata.sql` | CI metadata extension, if supporting evidence needs additional columns. |
 
-**Master data / code value:**
-- `tbl_dim_phase`: 11 phase, `phase_code` (`VARCHAR(20) UNIQUE`),
-  `phase_order` (`INT`) — danh sách 7 phase hiển thị: `1, 3, 4, 5, 6, 7, 8`.
-- `tbl_dim_artifact_type`: `artifact_type_code`, `default_file_name`,
-  `phase_id` (FK) — nguồn phase-mapping chính thức.
-- **Không có khái niệm SEQNO/formItemNm** trong vùng dữ liệu này.
+## formItemNm / SEQNO / Master Data / Code Value Mapping
 
----
+| display/item | internal value | source | note |
+|---|---|---|---|
+| AC status | `ACTIVE` / non-`ACTIVE` | `tbl_fact_acceptance_criteria.status` | Only `ACTIVE` ACs are used for coverage calculation. |
+| Coverage status | `PLANNED`, `PASSED`, `FAILED`, `UNTESTED`, `PARTIAL`, `MISSING`, `UNKNOWN` | `tbl_fact_ac_test_coverage.coverage_status` and read-model logic | Canonical status vocabulary for this ticket. |
+| Test run status | `SUCCESS`, `FAILED`, `CANCELLED`, `SKIPPED`, `RUNNING`, `PENDING`, `UNKNOWN` | `run_status` enum | Used by `tbl_fact_test_run` / `tbl_fact_test_case`. |
+| Parse mode | `DRAFT` / `PUBLISHED` | `ParseMode` enum | Do not invent additional modes. |
+| CI status | `SUCCESS` / `FAILED` / `RUNNING` / `UNKNOWN` | `tbl_fact_ci_run.status` | Supporting evidence only. |
+| `formItemNm` | N/A | Current implementation | Not used in this ticket. |
+| `SEQNO` | N/A | Current implementation | Not used in this ticket. |
+| Master data key | `ticket_id`, `repository_id`, `ac_key` | Current schema | Stable identity fields for lookup and reporting. |
 
-## Rule nghiệp vụ đặc thù
+## Multilingual Note
 
-**1. Nguồn Entry chính thức**: `create_date`/`update_date` tự khai báo
-trong header mỗi file `.md` (dòng `**Create date**: ...` / `**Update
-date**: ...`), parse qua `MarkdownParserCore.parse(...).headerMetadata()`
-(key normalize thành `create_date`/`update_date`). Dwell Time 1 file =
-`update_date − create_date`; Dwell Time 1 phase = cộng dồn tổng của tất cả
-file thuộc phase đó.
+- The ticket source and artifact templates contain Vietnamese, English, and some Japanese terms in the wider repo.
+- Preserve UTF-8 end-to-end; do not normalize away Vietnamese diacritics in documentation or parser warnings.
+- AC extraction must preserve the exact `ac_key` and normalized markdown section order; only the summary text can be shortened.
+- User-facing labels may be multilingual later, but ticket identity, AC keys, and status enums must stay stable and language-neutral.
 
-**2. Rủi ro chất lượng dữ liệu (đã được người dùng chấp nhận, không phải
-lỗi cần sửa)**: `Create date`/`Update date` là text tự gõ bởi người/AI
-soạn ticket — có thể quên cập nhật. 100% ví dụ hiện có trong dự án chỉ ở
-định dạng `YYYY-MM-DD` (không giờ:phút:giây) — nếu ticket cũ không được bổ
-sung giờ, độ phân giải Dwell Time tối đa là "ngày" (có thể ra `0` dù thực
-tế cách nhau vài giờ). Ghi rõ giới hạn này trong `spec-pack.md`
-(Assumption), không được âm thầm bỏ qua.
+## Encoding / Mojibake Note
 
-**3. Đa ngôn ngữ**: 3 ngôn ngữ `en`, `ja`, `vi`, namespace `"locale"`. Chỉ
-cần 1 label tên field mới (không có nhãn trạng thái).
+- Repository docs are UTF-8; maintain UTF-8 when writing or parsing `spec-pack.md`, `test-plan.md`, and `test-results.md`.
+- Do not introduce Shift-JIS / mojibake assumptions when validating text content.
+- Preserve code values exactly as ASCII tokens even when surrounding prose is localized.
 
-**4. Master data**: `tbl_dim_phase`, `tbl_dim_artifact_type` là 2 bảng
-master duy nhất liên quan.
+## Log / Audit / Operation Note
 
-**5. Quan hệ bảng đặc thù**: `tbl_fact_artifact_snapshot.phase_id` được
-denormalize từ `tbl_dim_artifact_type.phase_id` tại thời điểm scan — nếu
-seed `tbl_dim_artifact_type` bị sửa sau đó, dòng snapshot cũ không tự cập
-nhật. JOIN lại `tbl_dim_artifact_type` tại thời điểm query để lấy mapping
-mới nhất.
+- Every parse or recompute flow should log `traceId`, `ticketId`, and the artifact snapshot identity.
+- Persist parse warnings and linkage issues through existing evidence/data-quality tables instead of hiding them in memory.
+- Do not log raw prompt/chat text, secrets, token values, or full source text.
+- Operation troubleshooting should rely on `tbl_fact_evidence_event`, `tbl_fact_data_quality`, and existing traceable snapshot/run IDs.
+- This ticket remains parser-only and reuse-first: auditability matters more than adding new runtime surfaces.
 
-**6. `tbl_fact_ticket_phase_status` KHÔNG liên quan** tới field mới (chỉ 1
-dòng/ticket, `dwell_time_minutes` luôn `NULL`) — không đụng vào.
+## Ticket-Specific Constraints
 
-**7. Permission**: dùng lại `service.requirePm(caller,
-detail.row().projectId())`.
-
-**8. Encoding**: giữ nguyên literal UTF-8 cho ký tự tiếng Nhật trong
-`locale.json`, không escape `\uXXXX` (xem `ja/locale.json` hiện tại).
-
----
-
-## Chú ý khi implement
-
-1. Tạo migration mới cho bảng lưu `create_date`/`update_date` (đề xuất
-   `tbl_fact_artifact_document_date`) — additive-only, không ALTER bảng
-   hiện có. Hỏi người dùng trước khi chạy `flyway migrate`.
-2. Viết 1 service mới dùng chung gọi `MarkdownParserCore.parse(blobContent,
-   sourcePath).headerMetadata()` cho cả 7 file mục tiêu — không phụ thuộc
-   `ImplPlanParseService`/`TestPlanParseService`/`TestResultsParseService`
-   hay bất kỳ parser chuyên biệt nào.
-3. `DashboardTicketDetail` là Java record — chỉ 1 nơi khởi tạo
-   (`PmDashboardJdbcAdapter.java:259-269`) — sửa cả định nghĩa record
-   (`PmDashboardModels.java:266-277`) và nơi khởi tạo.
-4. Viết formatter `hh:mm:ss` thủ công (không dùng `Duration.toString()`),
-   không giới hạn 24 giờ (ví dụ `27:20:05`).
-5. Công thức phase có ≥2 file: **cộng dồn** `Σ(update−create)`, không phải
-   khoảng bao trùm MIN/MAX.
-6. Lỗi/timeout khi lấy dữ liệu → hiển thị `"-"` cho phase liên quan, không
-   throw lỗi UI, không retry tự động.
-
-## Chú ý khi review
-
-1. Kiểm tra công thức Dwell Time dùng đúng bảng mới
-   (`tbl_fact_artifact_document_date` hoặc tên tương đương), KHÔNG dùng
-   `created_at`/`collected_at`/`source_updated_at`/`parsed_summary`.
-2. Kiểm tra `DashboardTicketDetail` record cập nhật đủ ở 1 nơi khởi tạo duy
-   nhất.
-3. Kiểm tra không dùng `Duration.toString()`/`.format()` mặc định.
-4. Kiểm tra công thức cộng dồn đúng khi phase có ≥2 file.
-5. Kiểm tra JOIN `tbl_dim_artifact_type.phase_id` tại thời điểm query.
-6. Kiểm tra không có ALTER/DROP nào lên bảng hiện có — chỉ thêm bảng/VIEW
-   mới.
-7. Kiểm tra permission `requirePm` vẫn được gọi trước khi trả field mới.
-8. Cả 3 file `locale.json` (en/ja/vi) cập nhật đồng bộ, không nhãn trạng
-   thái, giữ nguyên literal UTF-8 tiếng Nhật.
-9. Kiểm tra service mới không đụng/ghi đè `parsed_summary` của 4 parser
-   chuyên biệt hiện có.
-
-## Chú ý khi test
-
-1. Test parse `create_date`/`update_date` từ header thật (`headerMetadata`),
-   bao gồm case chỉ có ngày (không giờ).
-2. Test service mới hoạt động đồng nhất trên cả 7 loại file (không cần
-   phân biệt file có/không có parser chuyên biệt).
-3. Test cộng dồn Dwell Time cho phase có ≥2 file.
-4. Test giá trị `"-"` khi: chưa có dữ liệu, lỗi/timeout API.
-5. Test format `hh:mm:ss` > 24 giờ.
-6. Test regression: ghi bảng mới không làm thay đổi `parsed_summary` hiện
-   có của 4 parser khác.
-7. FE test theo pattern `TicketDetailDrawer.test.tsx` (mock `react-i18next`,
-   `MemoryRouter` + `QueryClientProvider`) — verify field mounted thật, AC
-   Closure theo `40-testing.md`.
-8. Không mock domain record trực tiếp làm "dữ liệu giả" — record
-   instantiation là dữ liệu thật theo `40-testing.md`.
+- AC-Test Coverage is a Dashboard read-model concern, not a standalone business screen.
+- AC must come from `spec-pack.md`; test case planning must come from `test-plan.md`.
+- Manual mapping, pinning, and FE-side recomputation are forbidden in MVP.
+- Prefer existing tables and services; do not add a new coverage table unless a later phase proves it is unavoidable.
