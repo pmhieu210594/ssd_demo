@@ -3,7 +3,7 @@
 **Ticket ID**: PHASE-DWELL-TIME
 **Create date**: 2026-08-19
 **Author**: TBD
-**Update date**: 2026-08-20 (vòng 3 — toàn bộ 7 Gate kỹ thuật đã RESOLVED, người dùng đã duyệt "Áp dụng tất cả đề xuất"; đủ điều kiện viết code)
+**Update date**: 2026-08-20
 
 > Tài liệu này là bản tóm tắt bàn giao (handoff) — dùng để tiếp tục phiên làm việc sau khi nén/ngắt hội thoại. Đọc file này trước, chỉ mở lại `spec-pack.md`/`open-issues.md`/`impl-plan.md` khi cần chi tiết đầy đủ.
 

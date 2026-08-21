@@ -4,17 +4,6 @@
 **Vai trò**: Principal Engineer — implementation plan.
 **Create date**: 2026-08-19
 **Update date**: 2026-08-20
-để xác minh; xem `impact-analysis.md` § "Xác minh kỹ thuật 2026-08-20
-(vòng 2)" cho danh sách đầy đủ điểm đã sửa. Các số dòng/đường dẫn dưới đây
-đã cập nhật theo verify này, gồm: root package thực tế `com.sdd.platform`,
-`CHANGE_TARGET_FILES` có 8 phần tử không phải 7, không có blob dùng chung
-sẵn trong `scanTicketDirectory`, migration kế tiếp là `V512`, test file FE
-thực tế nằm ở `__ tests __` có khoảng trắng.)
-
-> Đọc `impact-analysis.md`, `context.md`, `ticket-rules.md`, `source-map.md`,
-> `wireframe.md` trước khi bắt đầu — 5 file đó chứa toàn bộ căn cứ/rủi ro/
-> layout đã phân tích. File này chỉ là **skeleton định hướng thay đổi**,
-> không phải code đầy đủ.
 
 ---
 

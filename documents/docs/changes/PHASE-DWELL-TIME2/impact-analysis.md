@@ -3,7 +3,7 @@
 **Ticket ID**: PHASE-DWELL-TIME
 **Vai trò**: Principal Engineer — impact analysis trước khi implement.
 **Create date**: 2026-08-19
-**Update date**: 2026-08-20 (bản xác minh lại bằng cách đọc trực tiếp source hiện tại — xem mục "Xác minh kỹ thuật 2026-08-20 (vòng 2)")
+**Update date**: 2026-08-20
 **Nguồn đọc**: `spec-pack.md`, `open-issues.md`, `context.md`, `ticket-rules.md`,
 `source-map.md`, `docs/architecture/*`, `docs/standards/*`, source đích đọc
 lại toàn văn ở vòng verify này (`PmDashboardJdbcAdapter.java`,

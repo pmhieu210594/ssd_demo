@@ -1,9 +1,9 @@
 # Review Checklist
 
 **Ticket ID**: PHASE-DWELL-TIME
-**Create date**: 2026-08-20 14:44:10
+**Create date**: 2026-08-19
 **Author**: TBD
-**Update date**: 2026-08-20 15:16:42
+**Update date**: 2026-08-20 (vòng 2 — đồng bộ với `impact-analysis.md`/`impl-plan.md` sau khi đọc lại toàn văn source thật)
 
 > Nguồn đối chiếu: `spec-pack.md` (§6 Acceptance Criteria), `impl-plan.md`,
 > `impact-analysis.md`, `wireframe.md`. Công thức Dwell Time chính thức:
