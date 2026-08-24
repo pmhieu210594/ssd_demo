@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.OrganizationMapper">
+
+    <resultMap id="organizationResultMap" type="Organization">
+        <id column="organization_id"
+            property="organizationId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="organization_code" property="organizationCode"/>
+        <result column="organization_name" property="organizationName"/>
+        <result column="description" property="description"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="version" property="version"/>
+    </resultMap>
+
+    <sql id="columns">
+        organization_id, organization_code, name_masked AS organization_name, description, status,
+        created_at, created_by, updated_at, updated_by, deleted_at, deleted_by, version
+    </sql>
+
+    <sql id="whereClause">
+        <where>
+            <if test="status != null and status == 'ACTIVE'">
+                deleted_at IS NULL
+              AND status = 'ACTIVE'
+            </if>
+            <if test="status != null and status == 'DELETED'">
+                deleted_at IS NOT NULL
+              AND status = 'DELETED'
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(organization_code) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(name_masked) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="findById" resultMap="organizationResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_organization
+        WHERE organization_id = #{organizationId}
+    </select>
+
+    <select id="findPage" resultMap="organizationResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_organization
+        <include refid="whereClause"/>
+        ORDER BY updated_at DESC, organization_code ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_dim_organization
+        <include refid="whereClause"/>
+    </select>
+
+    <select id="existsActiveCode" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_organization
+            WHERE deleted_at IS NULL
+              AND LOWER(organization_code) = LOWER(#{organizationCode})
+              <if test="excludeOrganizationId != null">
+                  AND organization_id &lt;&gt; #{excludeOrganizationId}
+              </if>
+        )
+    </select>
+
+    <select id="existsActiveName" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_organization
+            WHERE deleted_at IS NULL
+              AND LOWER(name_masked) = LOWER(#{organizationName})
+              <if test="excludeOrganizationId != null">
+                  AND organization_id &lt;&gt; #{excludeOrganizationId}
+              </if>
+        )
+    </select>
+
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_dim_organization (
+            organization_id,
+            organization_code,
+            name_masked,
+            description,
+            status,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            version
+        ) VALUES (
+            #{organizationId},
+            #{organizationCode},
+            #{organizationName},
+            #{description},
+            #{status}::record_status,
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{version}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_dim_organization
+        SET organization_code = #{organizationCode},
+            name_masked = #{organizationName},
+            description = #{description},
+            status = #{status}::record_status,
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE organization_id = #{organizationId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        WITH target_customers AS (
+            SELECT customer_id
+            FROM tbl_dim_customer
+            WHERE organization_id = #{organizationId}
+        ),
+        updated_customers AS (
+            UPDATE tbl_dim_customer
+            SET status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy},
+                deleted_at = #{deletedAt},
+                deleted_by = #{deletedBy},
+                version = version + 1
+            WHERE customer_id IN (SELECT customer_id FROM target_customers)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING customer_id
+        ),
+        target_projects AS (
+            SELECT project_id
+            FROM tbl_dim_project
+            WHERE customer_id IN (SELECT customer_id FROM target_customers)
+        ),
+        updated_projects AS (
+            UPDATE tbl_dim_project
+            SET status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING project_id
+        ),
+        target_repositories AS (
+            SELECT repository_id
+            FROM tbl_dim_repository
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+        ),
+        updated_repositories AS (
+            UPDATE tbl_dim_repository
+            SET status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE repository_id IN (SELECT repository_id FROM target_repositories)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING repository_id
+        ),
+        cancelled_tickets AS (
+            UPDATE tbl_dim_ticket
+            SET status = 'CANCELLED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND status &lt;&gt; 'CANCELLED'
+            RETURNING ticket_id
+        ),
+        disabled_project_roles AS (
+            UPDATE tbl_auth_member_project_role
+            SET active_flag = FALSE,
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND active_flag = TRUE
+            RETURNING member_key
+        ),
+        disabled_access_scopes AS (
+            UPDATE tbl_auth_member_access_scope
+            SET active_flag = FALSE,
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE organization_id = #{organizationId}
+               OR customer_id IN (SELECT customer_id FROM target_customers)
+               OR project_id IN (SELECT project_id FROM target_projects)
+               OR repository_id IN (SELECT repository_id FROM target_repositories)
+            RETURNING access_scope_id
+        )
+        UPDATE tbl_dim_organization
+        SET status = 'DELETED',
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE organization_id = #{organizationId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+    </update>
+
+    <delete id="deleteByCodePrefix">
+        DELETE FROM tbl_dim_organization
+        WHERE organization_code LIKE CONCAT(#{organizationCodePrefix}, '%')
+    </delete>
+
+</mapper>

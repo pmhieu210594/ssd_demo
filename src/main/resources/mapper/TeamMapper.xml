@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.TeamMapper">
+
+    <resultMap id="teamResultMap" type="Team">
+        <id column="team_id"
+            property="teamId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="team_code" property="teamCode"/>
+        <result column="team_name" property="teamName"/>
+        <result column="description" property="description"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="version" property="version"/>
+        <result column="member_count" property="memberCount"/>
+    </resultMap>
+
+    <resultMap id="teamMemberResultMap" type="TeamMember">
+        <id column="team_member_id"
+            property="teamMemberId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="team_id"
+                property="teamId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="team_name" property="teamName"/>
+        <result column="member_key"
+                property="memberKey"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="pseudonym" property="pseudonym"/>
+        <result column="role_id"
+                property="roleId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="role_name" property="roleName"/>
+        <result column="status" property="status"/>
+        <result column="joined_at" property="joinedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="version" property="version"/>
+    </resultMap>
+
+    <resultMap id="teamMemberOptionResultMap" type="TeamMemberOption">
+        <id column="member_key"
+            property="memberKey"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="pseudonym" property="pseudonym"/>
+        <result column="fullname" property="fullname"/>
+    </resultMap>
+
+    <resultMap id="teamRoleOptionResultMap" type="TeamRoleOption">
+        <id column="role_id"
+            property="roleId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="role_name" property="roleName"/>
+    </resultMap>
+
+    <sql id="teamColumns">
+        t.team_id,
+        t.team_code,
+        t.team_name,
+        t.description,
+        t.status,
+        t.created_at,
+        t.created_by,
+        t.updated_at,
+        t.updated_by,
+        t.deleted_at,
+        t.deleted_by,
+        t.version,
+        COALESCE(mc.member_count, 0) AS member_count
+    </sql>
+
+    <sql id="teamWhereClause">
+        <where>
+            <choose>
+                <when test="status != null and status == 'ACTIVE'">
+                    t.deleted_at IS NULL
+                      AND t.status = 'ACTIVE'
+                </when>
+                <when test="status != null and status == 'DELETED'">
+                    t.deleted_at IS NOT NULL
+                      AND t.status = 'DELETED'
+                </when>
+                <otherwise>
+                </otherwise>
+            </choose>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(t.team_code) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(t.team_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="findById" resultMap="teamResultMap">
+        SELECT <include refid="teamColumns"/>
+        FROM tbl_dim_team t
+        LEFT JOIN (
+            SELECT team_id, COUNT(*) AS member_count
+            FROM tbl_team_member
+            WHERE deleted_at IS NULL AND status = 'ACTIVE'
+            GROUP BY team_id
+        ) mc ON mc.team_id = t.team_id
+        WHERE t.team_id = #{teamId}
+    </select>
+
+    <select id="findPage" resultMap="teamResultMap">
+        SELECT <include refid="teamColumns"/>
+        FROM tbl_dim_team t
+        LEFT JOIN (
+            SELECT team_id, COUNT(*) AS member_count
+            FROM tbl_team_member
+            WHERE deleted_at IS NULL AND status = 'ACTIVE'
+            GROUP BY team_id
+        ) mc ON mc.team_id = t.team_id
+        <include refid="teamWhereClause"/>
+        ORDER BY t.updated_at DESC, t.team_code ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_dim_team t
+        <include refid="teamWhereClause"/>
+    </select>
+
+    <select id="existsActiveCode" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_team
+            WHERE deleted_at IS NULL
+              AND status = 'ACTIVE'
+              AND LOWER(team_code) = LOWER(#{teamCode})
+              <if test="excludeTeamId != null">
+                  AND team_id &lt;&gt; #{excludeTeamId}
+              </if>
+        )
+    </select>
+
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_dim_team (
+            team_id,
+            team_code,
+            team_name,
+            description,
+            status,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at,
+            deleted_by,
+            version
+        ) VALUES (
+            #{teamId},
+            #{teamCode},
+            #{teamName},
+            #{description},
+            #{status}::record_status,
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{deletedAt},
+            #{deletedBy},
+            #{version}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_dim_team
+        SET team_code = #{teamCode},
+            team_name = #{teamName},
+            description = #{description},
+            status = #{status}::record_status,
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE team_id = #{teamId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        WITH updated_members AS (
+            UPDATE tbl_team_member
+            SET status = 'INACTIVE',
+                deleted_at = #{deletedAt},
+                deleted_by = #{deletedBy},
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy},
+                version = version + 1
+            WHERE team_id = #{teamId}
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+            RETURNING team_member_id
+        )
+        UPDATE tbl_dim_team
+        SET status = 'DELETED',
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE team_id = #{teamId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+    </update>
+
+    <select id="findMembers" resultMap="teamMemberResultMap">
+        SELECT
+            tm.team_member_id,
+            tm.team_id,
+            t.team_name,
+            tm.member_key,
+            m.pseudonym,
+            tm.role_id,
+            r.role_name,
+            tm.status,
+            tm.joined_at,
+            tm.created_at,
+            tm.created_by,
+            tm.updated_at,
+            tm.updated_by,
+            tm.deleted_at,
+            tm.deleted_by,
+            tm.version
+        FROM tbl_team_member tm
+        INNER JOIN tbl_dim_team t ON t.team_id = tm.team_id
+        INNER JOIN tbl_dim_member_pseudonym m ON m.member_key = tm.member_key
+        INNER JOIN tbl_dim_role r ON r.role_id = tm.role_id
+        WHERE tm.team_id = #{teamId}
+          AND tm.deleted_at IS NULL
+          AND tm.status = 'ACTIVE'
+          <if test="status != null and status != ''">
+              AND tm.status = #{status}::record_status
+          </if>
+        ORDER BY tm.created_at DESC, m.pseudonym ASC
+    </select>
+
+    <select id="findMemberById" resultMap="teamMemberResultMap">
+        SELECT
+            tm.team_member_id,
+            tm.team_id,
+            t.team_name,
+            tm.member_key,
+            m.pseudonym,
+            tm.role_id,
+            r.role_name,
+            tm.status,
+            tm.joined_at,
+            tm.created_at,
+            tm.created_by,
+            tm.updated_at,
+            tm.updated_by,
+            tm.deleted_at,
+            tm.deleted_by,
+            tm.version
+        FROM tbl_team_member tm
+        INNER JOIN tbl_dim_team t ON t.team_id = tm.team_id
+        INNER JOIN tbl_dim_member_pseudonym m ON m.member_key = tm.member_key
+        INNER JOIN tbl_dim_role r ON r.role_id = tm.role_id
+        WHERE tm.team_member_id = #{teamMemberId}
+    </select>
+
+    <select id="existsActiveMembership" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_team_member
+            WHERE team_id = #{teamId}
+              AND member_key = #{memberKey}
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+              <if test="excludeTeamMemberId != null">
+                  AND team_member_id &lt;&gt; #{excludeTeamMemberId}
+              </if>
+        )
+    </select>
+
+    <insert id="insertMember" useGeneratedKeys="false">
+        INSERT INTO tbl_team_member (
+            team_member_id,
+            team_id,
+            member_key,
+            role_id,
+            status,
+            joined_at,
+            deleted_at,
+            deleted_by,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            version
+        ) VALUES (
+            #{teamMemberId},
+            #{teamId},
+            #{memberKey},
+            #{roleId},
+            #{status}::record_status,
+            #{joinedAt},
+            #{deletedAt},
+            #{deletedBy},
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{version}
+        )
+    </insert>
+
+    <update id="updateMemberRole">
+        UPDATE tbl_team_member
+        SET role_id = #{roleId},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE team_member_id = #{teamMemberId}
+          AND team_id = #{teamId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="removeMember">
+        UPDATE tbl_team_member
+        SET status = 'INACTIVE',
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE team_member_id = #{teamMemberId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <select id="existsActiveMember" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_member_pseudonym
+            WHERE member_key = #{memberKey}
+              AND (active_to IS NULL OR active_to >= CURRENT_DATE)
+        )
+    </select>
+
+    <select id="existsRole" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_role
+            WHERE role_id = #{roleId}
+        )
+    </select>
+
+    <select id="findActiveMemberOptions" resultMap="teamMemberOptionResultMap">
+        SELECT
+            m.member_key,
+            m.pseudonym,
+            COALESCE(a.fullname, m.pseudonym) AS fullname
+        FROM tbl_dim_member_pseudonym m
+        LEFT JOIN tbl_auth_user_account a ON a.member_key = m.member_key
+        WHERE (m.active_to IS NULL OR m.active_to >= CURRENT_DATE)
+          <if test="keyword != null and keyword != ''">
+              AND (
+                  LOWER(m.pseudonym) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                  OR LOWER(COALESCE(a.fullname, m.pseudonym)) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                  OR LOWER(CAST(m.member_key AS TEXT)) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+              )
+          </if>
+        ORDER BY m.pseudonym ASC
+    </select>
+
+    <select id="findRoleOptions" resultMap="teamRoleOptionResultMap">
+        SELECT role_id, role_name
+        FROM tbl_dim_role
+        ORDER BY role_name ASC
+    </select>
+
+</mapper>

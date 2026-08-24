@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.ProjectMapper">
+
+    <resultMap id="projectResultMap" type="Project">
+        <id column="project_id"
+            property="projectId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="customer_id"
+                property="customerId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="customer_name" property="customerName"/>
+        <result column="project_alias" property="projectAlias"/>
+        <result column="project_type" property="projectType"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="status" property="status"/>
+        <result column="delete_flag" property="deleteFlag"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+    </resultMap>
+
+    <resultMap id="projectTeamAssignmentResultMap" type="ProjectTeamAssignment">
+        <id column="project_team_id"
+            property="projectTeamId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="project_id"
+                property="projectId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="team_id"
+                property="teamId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="team_code" property="teamCode"/>
+        <result column="team_name" property="teamName"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+    </resultMap>
+
+    <sql id="projectColumns">
+        p.project_id,
+        p.customer_id,
+        c.customer_alias AS customer_name,
+        p.project_alias,
+        p.project_type,
+        p.risk_level,
+        p.status,
+        p.delete_flag,
+        p.created_at,
+        p.created_by,
+        p.updated_at,
+        p.updated_by,
+        p.deleted_at,
+        p.deleted_by
+    </sql>
+
+    <sql id="projectWhereClause">
+        <where>
+            <choose>
+                <when test="status != null and status == 'ACTIVE'">
+                    p.delete_flag = FALSE
+                    AND p.deleted_at IS NULL
+                    AND p.status = 'ACTIVE'
+                </when>
+                <when test="status != null and status == 'DELETED'">
+                    (p.delete_flag = TRUE OR p.deleted_at IS NOT NULL OR p.status = 'DELETED')
+                </when>
+                <otherwise>
+                </otherwise>
+            </choose>
+            <if test="customerId != null">
+                AND p.customer_id = #{customerId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(p.project_alias) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(c.customer_alias) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="findById" resultMap="projectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM tbl_dim_project p
+        INNER JOIN tbl_dim_customer c ON c.customer_id = p.customer_id
+        WHERE p.project_id = #{projectId}
+    </select>
+
+    <select id="findPage" resultMap="projectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM tbl_dim_project p
+        INNER JOIN tbl_dim_customer c ON c.customer_id = p.customer_id
+        <include refid="projectWhereClause"/>
+        ORDER BY p.updated_at DESC, p.project_alias ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_dim_project p
+        INNER JOIN tbl_dim_customer c ON c.customer_id = p.customer_id
+        <include refid="projectWhereClause"/>
+    </select>
+
+    <select id="existsActiveCustomer" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_customer
+            WHERE customer_id = #{customerId}
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+        )
+    </select>
+
+    <select id="existsActiveAlias" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_project
+            WHERE customer_id = #{customerId}
+              AND delete_flag = FALSE
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+              AND LOWER(BTRIM(project_alias)) = LOWER(BTRIM(#{projectAlias}))
+              <if test="excludeProjectId != null">
+                  AND project_id &lt;&gt; #{excludeProjectId}
+              </if>
+        )
+    </select>
+
+    <select id="findActiveTeamIdsByIds" resultType="java.util.UUID">
+        SELECT team_id
+        FROM tbl_dim_team
+        WHERE deleted_at IS NULL
+          AND status = 'ACTIVE'
+          AND team_id IN
+          <foreach item="teamId" collection="teamIds" open="(" separator="," close=")">
+              #{teamId}
+          </foreach>
+    </select>
+
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_dim_project (
+            project_id,
+            customer_id,
+            project_alias,
+            project_type,
+            risk_level,
+            status,
+            delete_flag,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at,
+            deleted_by
+        ) VALUES (
+            #{projectId},
+            #{customerId},
+            #{projectAlias},
+            #{projectType},
+            #{riskLevel}::severity_level,
+            #{status}::record_status,
+            #{deleteFlag},
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{deletedAt},
+            #{deletedBy}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_dim_project
+        SET customer_id = #{customerId},
+            project_alias = #{projectAlias},
+            project_type = #{projectType},
+            risk_level = #{riskLevel}::severity_level,
+            status = #{status}::record_status,
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE project_id = #{projectId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="softDelete">
+        WITH disabled_project_team AS (
+            UPDATE tbl_project_team
+            SET status = 'DELETED',
+                deleted_at = #{deletedAt},
+                deleted_by = #{deletedBy},
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id = #{projectId}
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+            RETURNING project_team_id
+        ),
+        target_repositories AS (
+            SELECT repository_id
+            FROM tbl_dim_repository
+            WHERE project_id = #{projectId}
+        ),
+        updated_repositories AS (
+            UPDATE tbl_dim_repository
+            SET delete_flag = TRUE,
+                deleted_at = #{deletedAt},
+                deleted_by = #{deletedBy},
+                status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE repository_id IN (SELECT repository_id FROM target_repositories)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING repository_id
+        )
+        UPDATE tbl_dim_project
+        SET status = 'DELETED',
+            delete_flag = TRUE,
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE project_id = #{projectId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <select id="findActiveTeamAssignments" resultMap="projectTeamAssignmentResultMap">
+        SELECT
+            pt.project_team_id,
+            pt.project_id,
+            pt.team_id,
+            t.team_code,
+            t.team_name,
+            pt.status,
+            pt.created_at,
+            pt.created_by,
+            pt.updated_at,
+            pt.updated_by,
+            pt.deleted_at,
+            pt.deleted_by
+        FROM tbl_project_team pt
+        INNER JOIN tbl_dim_team t ON t.team_id = pt.team_id
+        WHERE pt.project_id = #{projectId}
+          AND pt.deleted_at IS NULL
+          AND pt.status = 'ACTIVE'
+        ORDER BY t.team_name ASC
+    </select>
+
+    <update id="deactivateTeamAssignment">
+        UPDATE tbl_project_team
+        SET status = 'DELETED',
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE project_id = #{projectId}
+          AND team_id = #{teamId}
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="reactivateTeamAssignment">
+        UPDATE tbl_project_team
+        SET status = 'ACTIVE',
+            deleted_at = NULL,
+            deleted_by = NULL,
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE project_id = #{projectId}
+          AND team_id = #{teamId}
+          AND (deleted_at IS NOT NULL OR status = 'DELETED')
+    </update>
+
+    <insert id="insertTeamAssignment" useGeneratedKeys="false">
+        INSERT INTO tbl_project_team (
+            project_team_id,
+            project_id,
+            team_id,
+            status,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by
+        ) VALUES (
+            #{projectTeamId},
+            #{projectId},
+            #{teamId},
+            #{status}::record_status,
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy}
+        )
+    </insert>
+
+</mapper>

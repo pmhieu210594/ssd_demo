@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.RepositoryMapper">
+
+    <!-- ================= RESULT MAP ================= -->
+    <resultMap id="repositoryResultMap" type="RepositoryModel">
+        <id column="repository_id"
+            property="repositoryId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="project_id"
+                property="projectId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="project_alias" property="projectAlias"/>
+        <result column="repo_name_masked" property="repoNameMasked"/>
+        <result column="host_type" property="hostType"/>
+        <result column="default_branch" property="defaultBranch"/>
+        <result column="repo_url_hash" property="repoUrlHash"/>
+        <result column="status" property="status"/>
+        <result column="delete_flag" property="deleteFlag"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+    </resultMap>
+
+    <!-- ================= COMMON SQL ================= -->
+    <sql id="repositoryColumns">
+        r.repository_id,
+        r.project_id,
+        p.project_alias,
+        r.repo_name_masked,
+        r.host_type,
+        r.default_branch,
+        r.repo_url_hash,
+        r.status,
+        r.delete_flag,
+        r.created_at,
+        r.created_by,
+        r.updated_at,
+        r.updated_by,
+        r.deleted_at,
+        r.deleted_by
+    </sql>
+
+    <sql id="repositoryWhereClause">
+        <where>
+            <choose>
+                <when test="status != null and status == 'ACTIVE'">
+                    r.delete_flag = FALSE
+                    AND r.deleted_at IS NULL
+                    AND r.status = 'ACTIVE'
+                </when>
+                <when test="status != null and status == 'DELETED'">
+                    (r.delete_flag = TRUE OR r.deleted_at IS NOT NULL OR r.status = 'DELETED')
+                </when>
+                <otherwise>
+                </otherwise>
+            </choose>
+
+            <if test="projectId != null">
+                AND r.project_id = #{projectId}
+            </if>
+
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(r.repo_name_masked) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <!-- ================= SELECT ================= -->
+    <select id="findById" resultMap="repositoryResultMap">
+        SELECT <include refid="repositoryColumns"/>
+        FROM tbl_dim_repository r
+        INNER JOIN tbl_dim_project p ON p.project_id = r.project_id
+        WHERE r.repository_id = #{repositoryId}
+    </select>
+
+    <select id="findPage" resultMap="repositoryResultMap">
+        SELECT <include refid="repositoryColumns"/>
+        FROM tbl_dim_repository r
+        INNER JOIN tbl_dim_project p ON p.project_id = r.project_id
+        <include refid="repositoryWhereClause"/>
+        ORDER BY r.updated_at DESC, r.repo_name_masked ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_dim_repository r
+        <include refid="repositoryWhereClause"/>
+    </select>
+
+    <!-- ================= VALIDATION ================= -->
+    <select id="existsActiveName" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_repository
+            WHERE project_id = #{projectId}
+              AND delete_flag = FALSE
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+              AND LOWER(BTRIM(repo_name_masked)) = LOWER(BTRIM(#{repoNameMasked}))
+              <if test="excludeRepositoryId != null">
+                  AND repository_id &lt;&gt; #{excludeRepositoryId}
+              </if>
+        )
+    </select>
+
+    <!-- ================= INSERT ================= -->
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_dim_repository (
+            repository_id,
+            project_id,
+            repo_name_masked,
+            host_type,
+            default_branch,
+            repo_url_hash,
+            status,
+            delete_flag,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at,
+            deleted_by
+        ) VALUES (
+            #{repositoryId},
+            #{projectId},
+            #{repoNameMasked},
+            #{hostType},
+            #{defaultBranch},
+            #{repoUrlHash},
+            #{status}::record_status,
+            #{deleteFlag},
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{deletedAt},
+            #{deletedBy}
+        )
+    </insert>
+
+    <!-- ================= UPDATE ================= -->
+    <update id="update">
+        UPDATE tbl_dim_repository
+        SET project_id = #{projectId},
+            repo_name_masked = #{repoNameMasked},
+            host_type = #{hostType},
+            default_branch = #{defaultBranch},
+            repo_url_hash = #{repoUrlHash},
+            status = #{status}::record_status,
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE repository_id = #{repositoryId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <!-- ================= SOFT DELETE ================= -->
+    <update id="softDelete">
+        UPDATE tbl_dim_repository
+        SET status = 'DELETED',
+            delete_flag = TRUE,
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE repository_id = #{repositoryId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+</mapper>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.TicketLookupMapper">
+
+    <resultMap id="ticketOptionResultMap" type="TicketOption">
+        <constructor>
+            <idArg column="ticket_id" javaType="java.util.UUID"
+                   typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+            <arg column="external_ticket_key" javaType="String"/>
+            <arg column="title" javaType="String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="existsTicketInProject" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1 FROM tbl_dim_ticket WHERE ticket_id = #{ticketId} AND project_id = #{projectId}
+        )
+    </select>
+
+    <select id="existsTicketInRepository" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_fact_pull_request pr
+            WHERE pr.ticket_id = #{ticketId}
+              AND pr.repository_id = #{repositoryId}
+            UNION
+            SELECT 1
+            FROM tbl_fact_commit c
+            WHERE c.ticket_id = #{ticketId}
+              AND c.repository_id = #{repositoryId}
+        )
+    </select>
+
+    <select id="findOptionsByProject" resultMap="ticketOptionResultMap">
+        SELECT ticket_id, external_ticket_key, title
+        FROM tbl_dim_ticket t
+        WHERE t.project_id = #{projectId}
+        <if test="repositoryId != null">
+            AND (
+                EXISTS (
+                    SELECT 1 FROM tbl_fact_pull_request pr
+                    WHERE pr.ticket_id = t.ticket_id AND pr.repository_id = #{repositoryId}
+                )
+                OR EXISTS (
+                    SELECT 1 FROM tbl_fact_commit c
+                    WHERE c.ticket_id = t.ticket_id AND c.repository_id = #{repositoryId}
+                )
+            )
+        </if>
+        ORDER BY t.external_ticket_key ASC
+    </select>
+
+</mapper>

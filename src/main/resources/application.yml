@@ -1,0 +1,94 @@
+spring:
+  application:
+    name: sdd-evidence-platform
+    
+  config:
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sdd_platform}
+    username: ${SPRING_DATASOURCE_USERNAME:sdd}
+    password: ${SPRING_DATASOURCE_PASSWORD:change-me-in-production}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      connection-init-sql: SET TIME ZONE 'UTC'
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.sdd.platform: DEBUG
+    org.springframework.security: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] %logger{36} - %msg%n"
+
+springdoc:
+  api-docs:
+    path: /api/v1/openapi
+  swagger-ui:
+    path: /api/v1/swagger-ui
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.sdd.platform.domain.model
+  type-handlers-package: com.sdd.platform.infrastructure.persistence.type
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
+
+# ---- Application-specific config ----
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:4173
+      - http://172.25.192.1:5173
+      - http://192.168.12.155:5173/
+  frontend:
+    base-url: http://localhost:5173
+  jwt:
+    secret: ${APP_JWT_SECRET:replace-with-random-256-bit-base64-string}
+    expiration-hours: ${APP_JWT_EXPIRATION_HOURS:1}
+  auth:
+    enable-refresh-token: ${APP_AUTH_ENABLE_REFRESH_TOKEN:false}
+    enable-remember-me: ${APP_AUTH_ENABLE_REMEMBER_ME:false}
+    remember-me-ttl-days: ${APP_AUTH_REMEMBER_ME_TTL_DAYS:30}
+  connectors:
+    github:
+      api-base-url: https://api.github.com
+      api-token: ${GITHUB_API_TOKEN:}
+      webhook-secret: ${EDCAP_WEBHOOK_SECRET:}
+    jira:
+      base-url: ${JIRA_BASE_URL:}
+      email: ${JIRA_EMAIL:}
+      api-token: ${JIRA_API_TOKEN:}
+    circleci:
+      api-base-url: https://circleci.com/api/v2
+      api-token: ${CIRCLECI_API_TOKEN:}
+      webhook-secret: ${CIRCLECI_WEBHOOK_SECRET:}

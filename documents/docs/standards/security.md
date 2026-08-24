@@ -70,8 +70,7 @@ All error responses use `ErrorResponse`. Stack traces are never sent to the clie
 record ErrorResponse(
     OffsetDateTime timestamp,   // OffsetDateTime — NOT Instant (corrected 2026-06-08)
     int status,
-    String error,               // HTTP status name, e.g. "Not Found"
-    String errorCode,           // internal code, e.g. "NOT_FOUND", "VALIDATION_ERROR"
+    String error,               // internal machine-readable code, e.g. "NOT_FOUND", "VALIDATION_ERROR" — NOT an HTTP status phrase; there is no separate `errorCode` field (corrected 2026-08-20, source: `web/exception/ErrorResponse.java`, see AI-REVIEW-KPI-IMPROVEMENT/open-issues.md)
     String message,             // human-readable, safe to display
     String traceId              // from MDC — use this to find the server log
 ) {}

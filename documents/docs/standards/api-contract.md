@@ -58,12 +58,16 @@ Response is a raw `List<DTO>` — no wrapper object around it (see HD1).
 {
   "timestamp": "2026-06-08T10:05:32.123+00:00",
   "status": 404,
-  "error": "Not Found",
-  "errorCode": "NOT_FOUND",
+  "error": "NOT_FOUND",
   "message": "Project not found: 99",
   "traceId": "trc_a1b2c3d4e5f6"
 }
 ```
+
+> **Corrected 2026-08-20**: `error` is the internal machine-readable code (e.g. `"NOT_FOUND"`,
+> `"VALIDATION_ERROR"`), not an HTTP status phrase — there is no separate `errorCode` field.
+> Source of truth: `web/exception/ErrorResponse.java` (5 fields). See
+> `docs/changes/AI-REVIEW-KPI-IMPROVEMENT/open-issues.md`.
 
 > **Known inconsistency:** `GET /api/v1/admin/users` when the caller lacks ADMIN role returns
 > `{ "error": "ADMIN role required" }` (HTTP 403) — this does **not** match `ErrorResponse` shape.

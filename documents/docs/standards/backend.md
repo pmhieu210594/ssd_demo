@@ -204,6 +204,34 @@ If an ArchUnit test fails, the build fails. Do not add `@IgnoreArchitectureRules
 
 ---
 
+## Per-Project Role-Tier Access Check (Confirmed)
+
+For features that gate view/mutate access by a caller's per-project role (e.g. ADMIN/PM/QA-mutate,
+DEV-view-only, everyone else blocked), follow the shape used by `QaDashboardService.requireQaAccess`
+and `TicketBugMetricsService`'s `resolveAccess`/`requireMutateAccess`:
+
+1. ADMIN bypasses the per-project check entirely.
+2. Otherwise resolve the caller's role via `findProjectRole(caller, projectId)`.
+3. Compare the resolved role as a literal string (`.trim().toUpperCase()` then `.equals`), mapping
+   to a small set of tiers (e.g. `MUTATE` / `VIEW` / `NONE`) that callers switch on.
+4. A `null`/unrecognized caller or role always resolves to the most restrictive tier (`NONE`), never
+   a default-allow.
+
+**Use `AuthUserContext` (the raw role string), never `AppUser`** for this decision — `AppUser`
+collapses every non-ADMIN role into a single `EDITOR` value, which makes PM/QA/DEV indistinguishable
+at runtime and silently defeats a 3+-tier access model. `AppUser` may still be synthesized separately,
+only when a pre-existing collaborator (e.g. an audit-log service) requires that exact type for its own
+signature — never for the access decision itself.
+
+`AiQualityService`'s `Access{MUTATE,VIEW_ONLY,NONE}`/`resolveAccess` is a second, independent
+confirmed adopter of this exact shape (AI-QUALITY ticket) — treat it as a stable, repeatable
+convention for any future feature gating access by per-project role.
+
+This is now a repeated pattern (two independent implementations); new per-project role-tier features
+should follow this shape directly rather than re-deriving it from a prior ticket's docs.
+
+---
+
 ## Candidate Rules
 
 - **[Candidate]** `@Transactional(readOnly=true)` on all read-only service methods (enables future read-replica routing)

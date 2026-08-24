@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.AuthTokenSessionMapper">
+
+    <resultMap id="AuthTokenSessionResultMap" type="com.sdd.platform.domain.model.AuthTokenSession">
+        <id property="sessionId" column="session_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="userAccountId" column="user_account_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="username" column="username"/>
+        <result property="accessTokenHash" column="access_token_hash"/>
+        <result property="refreshTokenHash" column="refresh_token_hash"/>
+        <result property="accessTokenExpiresAt" column="access_token_expires_at"/>
+        <result property="refreshTokenExpiresAt" column="refresh_token_expires_at"/>
+        <result property="revokedAt" column="revoked_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO tbl_auth_token_session (
+            session_id, user_account_id, username,
+            access_token_hash, refresh_token_hash,
+            access_token_expires_at, refresh_token_expires_at,
+            revoked_at, created_at, updated_at
+        ) VALUES (
+            #{sessionId}, #{userAccountId}, #{username},
+            #{accessTokenHash}, #{refreshTokenHash},
+            #{accessTokenExpiresAt}, #{refreshTokenExpiresAt},
+            #{revokedAt}, COALESCE(#{createdAt}, now()), COALESCE(#{updatedAt}, now())
+        )
+    </insert>
+
+    <select id="findActiveByAccessTokenHash" resultMap="AuthTokenSessionResultMap">
+        SELECT
+            session_id,
+            user_account_id,
+            username,
+            access_token_hash,
+            refresh_token_hash,
+            access_token_expires_at,
+            refresh_token_expires_at,
+            revoked_at,
+            created_at,
+            updated_at
+        FROM tbl_auth_token_session
+        WHERE access_token_hash = #{accessTokenHash}
+          AND revoked_at IS NULL
+          AND access_token_expires_at &gt; #{now}
+    </select>
+
+    <update id="revokeByUsername">
+        UPDATE tbl_auth_token_session
+        SET revoked_at = #{revokedAt},
+            updated_at = #{revokedAt}
+        WHERE username = #{username}
+          AND revoked_at IS NULL
+    </update>
+
+</mapper>

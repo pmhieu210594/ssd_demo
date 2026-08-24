@@ -1,0 +1,2 @@
+ALTER TABLE tbl_dim_role
+ADD COLUMN IF NOT EXISTS delete_flag INT NOT NULL DEFAULT 0;

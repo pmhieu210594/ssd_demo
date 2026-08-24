@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.AuthUserAccountMapper">
+
+    <resultMap id="AuthUserAccountResultMap" type="com.sdd.platform.domain.model.AuthUserAccount">
+        <id property="userAccountId" column="user_account_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="memberKey" column="member_key" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="username" column="username"/>
+        <result property="fullname" column="fullname"/>
+        <result property="email" column="email"/>
+        <result property="passwordHash" column="password_hash"/>
+        <result property="passwordAlgo" column="password_algo"/>
+        <result property="active" column="is_active"/>
+        <result property="roleName" column="role_name"/>
+        <result property="roleDeleteFlag" column="role_delete_flag"/>
+    </resultMap>
+
+    <select id="findByUsername" resultMap="AuthUserAccountResultMap">
+        SELECT
+            a.user_account_id,
+            a.member_key,
+            a.username,
+            a.fullname,
+            a.email,
+            a.password_hash,
+            a.password_algo,
+            a.is_active,
+            r.role_name,
+            r.delete_flag AS role_delete_flag
+        FROM tbl_auth_user_account a
+        LEFT JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
+        LEFT JOIN tbl_dim_role r ON r.role_id = m.role_id
+        WHERE a.username = #{username}
+    </select>
+
+    <select id="findAccessScopesByMemberKey" resultType="string">
+        SELECT DISTINCT
+            CASE
+                WHEN organization_id IS NOT NULL THEN 'organization:' || organization_id::text
+                WHEN customer_id IS NOT NULL THEN 'customer:' || customer_id::text
+                WHEN project_id IS NOT NULL THEN 'project:' || project_id::text
+                WHEN repository_id IS NOT NULL THEN 'repository:' || repository_id::text
+                ELSE 'role:' || role_id::text
+            END AS scope
+        FROM tbl_auth_member_access_scope
+        WHERE member_key = #{memberKey}
+          AND active_flag = TRUE
+        ORDER BY scope
+    </select>
+
+</mapper>

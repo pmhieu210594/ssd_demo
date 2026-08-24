@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.EvidenceRepositoryMapper">
+
+    <resultMap id="evidenceRepositoryResultMap" type="EvidenceRepository">
+        <id column="repository_id"
+            property="repositoryId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="project_id" property="projectId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repo_name_masked" property="repositoryNameMasked"/>
+        <result column="host_type" property="hostType"/>
+        <result column="default_branch" property="defaultBranch"/>
+        <result column="repo_url_hash" property="repoUrlHash"/>
+    </resultMap>
+
+    <sql id="columns">
+        repository_id, project_id, repo_name_masked, host_type, default_branch, repo_url_hash
+    </sql>
+
+    <select id="findByProjectId" resultMap="evidenceRepositoryResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_repository
+        WHERE project_id = #{projectId}
+        ORDER BY repo_name_masked ASC
+    </select>
+
+    <select id="findByRepositoryId" resultMap="evidenceRepositoryResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_repository
+        WHERE repository_id = #{repositoryId}
+    </select>
+
+    <select id="findByRepositoryNameMaskedAndHostType" resultMap="evidenceRepositoryResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_repository
+        WHERE repo_name_masked = #{repositoryNameMasked}
+          AND LOWER(host_type) = LOWER(#{hostType})
+        ORDER BY repository_id
+        LIMIT 1
+    </select>
+</mapper>

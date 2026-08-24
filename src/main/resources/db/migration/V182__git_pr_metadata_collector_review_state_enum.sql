@@ -1,0 +1,5 @@
+DO $$ BEGIN
+    ALTER TYPE review_state ADD VALUE IF NOT EXISTS 'REVIEW_REQUIRED';
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;

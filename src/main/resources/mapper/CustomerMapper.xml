@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.CustomerMapper">
+
+    <resultMap id="customerResultMap" type="Customer">
+        <id column="customer_id"
+            property="customerId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="organization_id"
+                property="organizationId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="organization_name" property="organizationName"/>
+        <result column="customer_code" property="customerCode"/>
+        <result column="customer_alias" property="customerAlias"/>
+        <result column="classification" property="classification"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="version" property="version"/>
+    </resultMap>
+
+    <sql id="columns">
+        c.customer_id, c.organization_id, o.name_masked AS organization_name, c.customer_code, c.customer_alias,
+        c.classification, c.status, c.created_at, c.created_by, c.updated_at, c.updated_by,
+        c.deleted_at, c.deleted_by, c.version
+    </sql>
+
+    <sql id="whereClause">
+        <where>
+            <if test="organizationId != null">
+                c.organization_id = #{organizationId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(c.customer_code) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(c.customer_alias) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+            <if test="classification != null and classification != 'ALL'">
+                AND c.classification = #{classification}
+            </if>
+            <choose>
+                <when test="status != null and status == 'ACTIVE'">
+                    AND c.deleted_at IS NULL
+                      AND c.status = 'ACTIVE'
+                    AND o.status = 'ACTIVE'
+                    AND o.deleted_at IS NULL
+                </when>
+                <when test="status != null and status == 'DELETED'">
+                    AND c.deleted_at IS NOT NULL
+                      AND c.status = 'DELETED'
+                </when>
+                <otherwise>
+                    <!-- ALL: show both active and deleted customers, including those under deleted organizations -->
+                </otherwise>
+            </choose>
+        </where>
+    </sql>
+
+    <select id="findById" resultMap="customerResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_customer c
+        LEFT JOIN tbl_dim_organization o ON o.organization_id = c.organization_id
+        WHERE c.customer_id = #{customerId}
+    </select>
+
+    <select id="findPage" resultMap="customerResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_dim_customer c
+        INNER JOIN tbl_dim_organization o ON o.organization_id = c.organization_id
+        <include refid="whereClause"/>
+        ORDER BY c.updated_at DESC, c.customer_code ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_dim_customer c
+        INNER JOIN tbl_dim_organization o ON o.organization_id = c.organization_id
+        <include refid="whereClause"/>
+    </select>
+
+    <select id="existsActiveAlias" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_customer
+            WHERE organization_id = #{organizationId}
+              AND deleted_at IS NULL
+              AND LOWER(customer_alias) = LOWER(#{customerAlias})
+              <if test="excludeCustomerId != null">
+                  AND customer_id &lt;&gt; #{excludeCustomerId}
+              </if>
+        )
+    </select>
+
+    <select id="existsActiveCode" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_dim_customer
+            WHERE deleted_at IS NULL
+              AND LOWER(customer_code) = LOWER(#{customerCode})
+              <if test="excludeCustomerId != null">
+                  AND customer_id &lt;&gt; #{excludeCustomerId}
+              </if>
+        )
+    </select>
+
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_dim_customer (
+            customer_id,
+            organization_id,
+            customer_code,
+            customer_alias,
+            classification,
+            status,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at,
+            deleted_by,
+            version
+        ) VALUES (
+            #{customerId},
+            #{organizationId},
+            #{customerCode},
+            #{customerAlias},
+            #{classification}::text,
+            #{status}::record_status,
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{deletedAt},
+            #{deletedBy},
+            #{version}
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_dim_customer
+        SET organization_id = #{organizationId},
+            customer_code = #{customerCode},
+            customer_alias = #{customerAlias},
+            classification = #{classification}::text,
+            status = #{status}::record_status,
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE customer_id = #{customerId}
+          AND version = #{version}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        WITH target_customer AS (
+            SELECT customer_id
+            FROM tbl_dim_customer
+            WHERE customer_id = #{customerId}
+              AND version = #{version}
+              AND deleted_at IS NULL
+        ),
+        target_projects AS (
+            SELECT project_id
+            FROM tbl_dim_project
+            WHERE customer_id IN (SELECT customer_id FROM target_customer)
+        ),
+        updated_projects AS (
+            UPDATE tbl_dim_project
+            SET status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING project_id
+        ),
+        target_repositories AS (
+            SELECT repository_id
+            FROM tbl_dim_repository
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+        ),
+        updated_repositories AS (
+            UPDATE tbl_dim_repository
+            SET status = 'DELETED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE repository_id IN (SELECT repository_id FROM target_repositories)
+              AND status &lt;&gt; 'DELETED'
+            RETURNING repository_id
+        ),
+        updated_tickets AS (
+            UPDATE tbl_dim_ticket
+            SET status = 'CANCELLED',
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND status &lt;&gt; 'CANCELLED'
+            RETURNING ticket_id
+        ),
+        disabled_project_roles AS (
+            UPDATE tbl_auth_member_project_role
+            SET active_flag = FALSE,
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE project_id IN (SELECT project_id FROM target_projects)
+              AND active_flag = TRUE
+            RETURNING member_key
+        ),
+        disabled_access_scopes AS (
+            UPDATE tbl_auth_member_access_scope
+            SET active_flag = FALSE,
+                updated_at = #{updatedAt},
+                updated_by = #{updatedBy}
+            WHERE customer_id IN (SELECT customer_id FROM target_customer)
+               OR project_id IN (SELECT project_id FROM target_projects)
+               OR repository_id IN (SELECT repository_id FROM target_repositories)
+            RETURNING access_scope_id
+        )
+        UPDATE tbl_dim_customer
+        SET status = 'DELETED',
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy},
+            version = version + 1
+        WHERE customer_id IN (SELECT customer_id FROM target_customer)
+    </update>
+
+</mapper>

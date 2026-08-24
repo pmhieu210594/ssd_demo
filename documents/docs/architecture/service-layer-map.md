@@ -92,19 +92,21 @@ Notes:
 | `CircleCiWebhookService.handle()` | No explicit `@Transactional` annotation | Same considerations as GitHub service |
 | `DataOpsDashboardService` | `@Transactional(readOnly = true)` on read methods | Read-only dashboard aggregation should not hold write intent; aligns with live read model behavior |
 | `AdminAuditLogWriter` (ADMIN-AUDIT-LOG 2026-07) | `NESTED` propagation for CRUD audit hooks, `REQUIRES_NEW` for login/logout hooks | Best-effort side-effect write pattern — see below |
+| `TemplateUsageStatWriter` (PROMPT_TEMPLATE_REUSE_RATE 2026-08) | `REQUIRES_NEW` propagation, called from `GithubWebhookService`'s per-file validation loop (outside the webhook's own transactional scope) | Second confirmed implementer of the Best-Effort pattern below — see the round-3 pitfall note |
 
 Notes:
 - Transactional design is conservative: only short, critical DB updates (user upsert) are transactional.
 - Long-running external syncs are intentionally not wrapped in a transaction to avoid long DB locks and to allow partial progress and retry handling.
 
-### Best-Effort Audit Write Pattern (Confirmed — ADMIN-AUDIT-LOG 2026-07-10)
+### Best-Effort Audit Write Pattern (Confirmed — ADMIN-AUDIT-LOG 2026-07-10; reconfirmed PROMPT_TEMPLATE_REUSE_RATE 2026-08-17)
 
-When a cross-cutting write (e.g. an audit log entry) must never cause the primary business operation to fail or roll back, give it its own transaction boundary rather than letting it share the caller's:
+When a cross-cutting write (e.g. an audit log entry, a usage-statistics counter) must never cause the primary business operation to fail or roll back, give it its own transaction boundary rather than letting it share the caller's:
 
 - **Hook called from inside an existing business `@Transactional` method** (e.g. a CRUD service's `create()`/`update()`/`delete()`): use `Propagation.NESTED` on the audit write. A savepoint isolates the audit insert — if it throws, only the audit insert rolls back, not the caller's business transaction.
-- **Hook called from outside any business transaction** (e.g. login/logout, which run before/after the request's own transactional scope): use `Propagation.REQUIRES_NEW` so the audit write gets its own transaction rather than silently running non-transactionally.
-- Catch and log (SLF4J) any exception from the audit write inside the writer; never let it propagate to the caller.
-- This pattern generalizes to any future cross-cutting write that must be "fire and forget" relative to the primary operation. See `AdminAuditLogWriter.java` and `docs/knowledge/admin-audit-log.md` for the reference implementation.
+- **Hook called from outside any business transaction** (e.g. login/logout, which run before/after the request's own transactional scope; or a webhook's per-file validation loop): use `Propagation.REQUIRES_NEW` so the write gets its own transaction rather than silently running non-transactionally.
+- **`REQUIRES_NEW`/`NESTED` alone only isolates the transaction — it does not swallow the exception.** The `try/catch` at the *call site* (not just the propagation annotation on the writer bean) is the part that actually makes the write best-effort. `TemplateUsageStatWriter`'s first implementation used `REQUIRES_NEW` correctly but omitted the call-site `try/catch`, so a `DataAccessException` writing one file's counters still aborted the entire webhook and all remaining files in the same PR — caught in Phase 5 round 3 (Codex automated review, `OI-PROMPT_TEMPLATE_REUSE_RATE-17`). Always pair the propagation annotation with an explicit `catch` at the caller.
+- Catch and log (SLF4J) any exception from the write inside the writer *and* at the call site; never let it propagate to the caller.
+- This pattern generalizes to any future cross-cutting write that must be "fire and forget" relative to the primary operation. See `AdminAuditLogWriter.java`/`docs/knowledge/admin-audit-log.md` and `TemplateUsageStatWriter.java`/`docs/knowledge/prompt-template-reuse-rate.md` for reference implementations.
 
 ---
 

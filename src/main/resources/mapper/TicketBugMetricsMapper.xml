@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.TicketBugMetricsMapper">
+
+    <!-- ================= RESULT MAP ================= -->
+    <resultMap id="ticketBugMetricsResultMap" type="TicketBugMetricsModel">
+        <id column="ticket_bug_id"
+            property="ticketBugId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="project_id"
+                property="projectId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repository_id"
+                property="repositoryId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="ticket_id"
+                property="ticketId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="ticket_external_key" property="ticketExternalKey"/>
+        <result column="ticket_title" property="ticketTitle"/>
+        <result column="internal_bug_count" property="internalBugCount"/>
+        <result column="customer_bug_count" property="customerBugCount"/>
+        <result column="note" property="note"/>
+        <result column="status" property="status"/>
+        <result column="delete_flag" property="deleteFlag"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="deleted_by" property="deletedBy"/>
+    </resultMap>
+
+    <!-- ================= COMMON SQL ================= -->
+    <sql id="ticketBugMetricsColumns">
+        m.ticket_bug_id,
+        m.project_id,
+        m.repository_id,
+        m.ticket_id,
+        t.external_ticket_key AS ticket_external_key,
+        t.title AS ticket_title,
+        m.internal_bug_count,
+        m.customer_bug_count,
+        m.note,
+        m.status,
+        m.delete_flag,
+        m.created_at,
+        m.created_by,
+        m.updated_at,
+        m.updated_by,
+        m.deleted_at,
+        m.deleted_by
+    </sql>
+
+    <sql id="ticketBugMetricsWhereClause">
+        <where>
+            m.delete_flag = FALSE
+            AND m.deleted_at IS NULL
+            AND m.status = 'ACTIVE'
+            <if test="projectId != null">
+                AND m.project_id = #{projectId}
+            </if>
+            <if test="repositoryId != null">
+                AND m.repository_id = #{repositoryId}
+            </if>
+            <if test="search != null and search != ''">
+                AND (t.external_ticket_key ILIKE CONCAT('%', #{search}, '%')
+                     OR t.title ILIKE CONCAT('%', #{search}, '%'))
+            </if>
+        </where>
+    </sql>
+
+    <!-- ================= SELECT ================= -->
+    <select id="findById" resultMap="ticketBugMetricsResultMap">
+        SELECT <include refid="ticketBugMetricsColumns"/>
+        FROM tbl_ticket_bug_metrics m
+        INNER JOIN tbl_dim_ticket t ON t.ticket_id = m.ticket_id
+        WHERE m.ticket_bug_id = #{ticketBugId}
+    </select>
+
+    <select id="findPage" resultMap="ticketBugMetricsResultMap">
+        SELECT <include refid="ticketBugMetricsColumns"/>
+        FROM tbl_ticket_bug_metrics m
+        INNER JOIN tbl_dim_ticket t ON t.ticket_id = m.ticket_id
+        <include refid="ticketBugMetricsWhereClause"/>
+        ORDER BY m.updated_at DESC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_ticket_bug_metrics m
+        INNER JOIN tbl_dim_ticket t ON t.ticket_id = m.ticket_id
+        <include refid="ticketBugMetricsWhereClause"/>
+    </select>
+
+    <!-- ================= VALIDATION ================= -->
+    <select id="existsActiveByTicketId" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_ticket_bug_metrics
+            WHERE ticket_id = #{ticketId}
+              AND delete_flag = FALSE
+              AND deleted_at IS NULL
+              AND status = 'ACTIVE'
+        )
+    </select>
+
+    <!-- ================= SINGLE LOOKUP ================= -->
+    <select id="findActiveByTicketId" resultMap="ticketBugMetricsResultMap">
+        SELECT <include refid="ticketBugMetricsColumns"/>
+        FROM tbl_ticket_bug_metrics m
+        INNER JOIN tbl_dim_ticket t ON t.ticket_id = m.ticket_id
+        WHERE m.ticket_id = #{ticketId}
+          AND m.delete_flag = FALSE
+          AND m.deleted_at IS NULL
+          AND m.status = 'ACTIVE'
+    </select>
+
+    <!-- ================= INSERT ================= -->
+    <insert id="insert" useGeneratedKeys="false">
+        INSERT INTO tbl_ticket_bug_metrics (
+            ticket_bug_id,
+            project_id,
+            repository_id,
+            ticket_id,
+            internal_bug_count,
+            customer_bug_count,
+            note,
+            status,
+            delete_flag,
+            created_at,
+            created_by,
+            updated_at,
+            updated_by,
+            deleted_at,
+            deleted_by
+        ) VALUES (
+            #{ticketBugId},
+            #{projectId},
+            #{repositoryId},
+            #{ticketId},
+            #{internalBugCount},
+            #{customerBugCount},
+            #{note},
+            #{status}::record_status,
+            #{deleteFlag},
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy},
+            #{deletedAt},
+            #{deletedBy}
+        )
+    </insert>
+
+    <!-- ================= UPDATE ================= -->
+    <update id="update">
+        UPDATE tbl_ticket_bug_metrics
+        SET internal_bug_count = #{internalBugCount},
+            customer_bug_count = #{customerBugCount},
+            note = #{note},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE ticket_bug_id = #{ticketBugId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+    <!-- ================= SOFT DELETE ================= -->
+    <update id="softDelete">
+        UPDATE tbl_ticket_bug_metrics
+        SET status = 'DELETED',
+            delete_flag = TRUE,
+            deleted_at = #{deletedAt},
+            deleted_by = #{deletedBy},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE ticket_bug_id = #{ticketBugId}
+          AND delete_flag = FALSE
+          AND deleted_at IS NULL
+          AND status = 'ACTIVE'
+    </update>
+
+</mapper>

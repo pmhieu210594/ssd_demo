@@ -1,0 +1,46 @@
+# Env
+.env
+.env.local
+.env.*.local
+
+# Backend / Java
+/target/
+/.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+hs_err_pid*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Build output
+build/
+
+# Test artifacts
+/test-output/
+coverage/
+.nyc_output/
+
+# Secrets
+*.pem
+*.key
+secrets/

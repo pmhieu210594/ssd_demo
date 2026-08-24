@@ -17,8 +17,7 @@ must not return ad-hoc error `ResponseEntity` or `Map` with error status.
 record ErrorResponse(
     OffsetDateTime timestamp,  // NOTE: OffsetDateTime — not Instant
     int status,
-    String error,              // HTTP status phrase, e.g. "Not Found"
-    String errorCode,          // internal enum-like code (see mapping below)
+    String error,              // internal enum-like code (see mapping below) — NOT an HTTP status phrase; there is no separate `errorCode` field (corrected 2026-08-20, source: `web/exception/ErrorResponse.java`)
     String message,            // safe, user-readable description
     String traceId             // from MDC — use to find the server log entry
 ) {}

@@ -1,0 +1,24 @@
+# PostgreSQL local for development.
+# Production used managed DB (RDS / Cloud SQL) — Don't deploy this file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sdd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sdd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB:-sdd_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sdd} -d ${POSTGRES_DB:-sdd_platform}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: sdd-postgres-data

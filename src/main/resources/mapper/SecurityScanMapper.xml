@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.SecurityScanMapper">
+
+    <resultMap id="securityScanResultMap" type="SecurityScan">
+        <id column="security_scan_id"
+            property="securityScanId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repository_id" property="repositoryId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repository_name_masked" property="repositoryNameMasked"/>
+        <result column="ticket_id" property="ticketId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="pr_id" property="prId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="ci_run_id" property="ciRunId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="branch_name" property="branchName"/>
+        <result column="commit_sha" property="commitSha"/>
+        <result column="pull_request_number" property="pullRequestNumber"/>
+        <result column="workflow_run_id" property="workflowRunId"/>
+        <result column="workflow_job_name" property="workflowJobName"/>
+        <result column="scanner_type" property="scannerType"/>
+        <result column="scanner_name" property="scannerName"/>
+        <result column="scan_tool" property="scanTool"/>
+        <result column="status" property="status"/>
+        <result column="scan_status" property="scanStatus"/>
+        <result column="severity" property="severity"/>
+        <result column="finding_count" property="findingCount"/>
+        <result column="unresolved_count" property="unresolvedCount"/>
+        <result column="critical_count" property="criticalCount"/>
+        <result column="high_count" property="highCount"/>
+        <result column="medium_count" property="mediumCount"/>
+        <result column="low_count" property="lowCount"/>
+        <result column="info_count" property="infoCount"/>
+        <result column="summary" property="summary"/>
+        <result column="scan_counts_json" property="scanCountsJson"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="collected_at" property="collectedAt"/>
+    </resultMap>
+
+    <sql id="columns">
+        security_scan_id, repository_id, repository_name_masked, ticket_id, pr_id, ci_run_id,
+        branch_name, commit_sha, workflow_run_id, workflow_job_name,
+        pull_request_number,
+        scanner_type, scanner_name, scan_tool, status, scan_status, severity,
+        finding_count, unresolved_count, critical_count, high_count, medium_count, low_count, info_count,
+        summary, scan_counts_json, started_at, finished_at, collected_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO tbl_fact_security_scan (
+            <include refid="columns"/>
+        ) VALUES (
+            #{securityScanId},
+            #{repositoryId},
+            #{repositoryNameMasked},
+            #{ticketId},
+            #{prId},
+            #{ciRunId},
+            #{branchName},
+            #{commitSha},
+            #{workflowRunId},
+            #{workflowJobName},
+            #{pullRequestNumber},
+            #{scannerType},
+            #{scannerName},
+            #{scanTool},
+            #{status}::run_status,
+            #{scanStatus},
+            #{severity}::severity_level,
+            #{findingCount},
+            #{unresolvedCount},
+            #{criticalCount},
+            #{highCount},
+            #{mediumCount},
+            #{lowCount},
+            #{infoCount},
+            #{summary},
+            #{scanCountsJson},
+            #{startedAt},
+            #{finishedAt},
+            #{collectedAt}
+        )
+        ON CONFLICT (repository_id, commit_sha, scanner_type) DO UPDATE
+        SET repository_name_masked = EXCLUDED.repository_name_masked,
+            ticket_id = EXCLUDED.ticket_id,
+            pr_id = EXCLUDED.pr_id,
+            ci_run_id = EXCLUDED.ci_run_id,
+            branch_name = EXCLUDED.branch_name,
+            commit_sha = EXCLUDED.commit_sha,
+            pull_request_number = EXCLUDED.pull_request_number,
+            scanner_name = EXCLUDED.scanner_name,
+            scan_tool = EXCLUDED.scan_tool,
+            status = EXCLUDED.status,
+            scan_status = EXCLUDED.scan_status,
+            severity = EXCLUDED.severity,
+            finding_count = EXCLUDED.finding_count,
+            unresolved_count = EXCLUDED.unresolved_count,
+            critical_count = EXCLUDED.critical_count,
+            high_count = EXCLUDED.high_count,
+            medium_count = EXCLUDED.medium_count,
+            low_count = EXCLUDED.low_count,
+            info_count = EXCLUDED.info_count,
+            summary = EXCLUDED.summary,
+            scan_counts_json = EXCLUDED.scan_counts_json,
+            started_at = EXCLUDED.started_at,
+            finished_at = EXCLUDED.finished_at,
+            collected_at = EXCLUDED.collected_at
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_fact_security_scan
+        SET repository_name_masked = #{repositoryNameMasked},
+            ticket_id = #{ticketId},
+            pr_id = #{prId},
+            ci_run_id = #{ciRunId},
+            branch_name = #{branchName},
+            commit_sha = #{commitSha},
+            pull_request_number = #{pullRequestNumber},
+            workflow_run_id = #{workflowRunId},
+            workflow_job_name = #{workflowJobName},
+            scanner_type = #{scannerType},
+            scanner_name = #{scannerName},
+            scan_tool = #{scanTool},
+            status = #{status}::run_status,
+            scan_status = #{scanStatus},
+            severity = #{severity}::severity_level,
+            finding_count = #{findingCount},
+            unresolved_count = #{unresolvedCount},
+            critical_count = #{criticalCount},
+            high_count = #{highCount},
+            medium_count = #{mediumCount},
+            low_count = #{lowCount},
+            info_count = #{infoCount},
+            summary = #{summary},
+            scan_counts_json = #{scanCountsJson},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt},
+            collected_at = #{collectedAt}
+        WHERE security_scan_id = #{securityScanId}
+    </update>
+
+    <select id="findRecent" resultMap="securityScanResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_fact_security_scan
+        ORDER BY collected_at DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

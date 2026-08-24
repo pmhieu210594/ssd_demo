@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.UserAccountAdminMapper">
+
+    <resultMap id="userAccountAdminResultMap" type="com.sdd.platform.domain.model.UserAccountAdminView">
+        <id property="accountId" column="user_account_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="memberKey" column="member_key" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="username" column="username"/>
+        <result property="fullname" column="fullname"/>
+        <result property="email" column="email"/>
+        <result property="roleId" column="role_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="roleName" column="role_name"/>
+        <result property="teamId" column="team_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="teamName" column="team_name"/>
+        <result property="active" column="is_active"/>
+        <result property="lastLoginAt" column="last_login_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="roleOptionResultMap" type="com.sdd.platform.domain.model.RoleOption">
+        <id property="roleId" column="role_id" javaType="java.util.UUID" typeHandler="com.sdd.platform.infrastructure.persistence.type.UuidTypeHandler"/>
+        <result property="roleName" column="role_name"/>
+    </resultMap>
+
+    <sql id="columns">
+        a.user_account_id,
+        a.member_key,
+        a.username,
+        a.fullname,
+        a.email,
+        m.role_id,
+        r.role_name,
+        m.team_id,
+        NULL::varchar AS team_name,
+        a.is_active,
+        NULL::timestamptz AS last_login_at,
+        a.created_at,
+        a.updated_at
+    </sql>
+
+    <sql id="whereClause">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(a.username) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(a.fullname) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(COALESCE(a.email, '')) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                    OR LOWER(m.pseudonym) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                )
+            </if>
+            <if test="status != null and status == 'ACTIVE'">
+                AND a.is_active = TRUE
+            </if>
+            <if test="status != null and status == 'INACTIVE'">
+                AND a.is_active = FALSE
+            </if>
+            <if test="roleIds != null and roleIds.size() > 0">
+                AND m.role_id IN
+                <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+                    #{roleId}
+                </foreach>
+            </if>
+        </where>
+    </sql>
+
+    <select id="findPage" resultMap="userAccountAdminResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_auth_user_account a
+        JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
+        LEFT JOIN tbl_dim_role r ON r.role_id = m.role_id
+        <include refid="whereClause"/>
+        ORDER BY a.updated_at DESC, a.username ASC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_auth_user_account a
+        JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
+        LEFT JOIN tbl_dim_role r ON r.role_id = m.role_id
+        <include refid="whereClause"/>
+    </select>
+
+    <select id="findById" resultMap="userAccountAdminResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_auth_user_account a
+        JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
+        LEFT JOIN tbl_dim_role r ON r.role_id = m.role_id
+        WHERE a.user_account_id = #{accountId}
+    </select>
+
+    <select id="findRoleById" resultMap="roleOptionResultMap">
+        SELECT role_id, role_name
+        FROM tbl_dim_role
+        WHERE role_id = #{roleId}
+    </select>
+
+    <select id="findRoles" resultMap="roleOptionResultMap">
+        SELECT role_id, role_name
+        FROM tbl_dim_role
+        WHERE delete_flag = 0
+        ORDER BY role_name ASC
+    </select>
+
+    <select id="existsUsername" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM tbl_auth_user_account
+            WHERE LOWER(username) = LOWER(#{username})
+            <if test="excludeAccountId != null">
+                AND user_account_id &lt;&gt; #{excludeAccountId}
+            </if>
+        )
+    </select>
+
+    <select id="countActiveAdminsExcluding" resultType="long">
+        SELECT COUNT(*)
+        FROM tbl_auth_user_account a
+        JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
+        JOIN tbl_dim_role r ON r.role_id = m.role_id
+        WHERE a.is_active = TRUE
+          AND UPPER(r.role_name) = 'ADMIN'
+          AND a.user_account_id &lt;&gt; #{accountId}
+    </select>
+
+    <insert id="insertMember">
+        INSERT INTO tbl_dim_member_pseudonym (
+            member_key,
+            role_id,
+            team_id,
+            pseudonym,
+            active_from,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{memberKey},
+            #{roleId},
+            NULL,
+            #{pseudonym},
+            CURRENT_DATE,
+            #{actor},
+            #{actor},
+            #{now},
+            #{now}
+        )
+    </insert>
+
+    <insert id="insertAccount">
+        INSERT INTO tbl_auth_user_account (
+            user_account_id,
+            member_key,
+            username,
+            fullname,
+            email,
+            email_hash,
+            password_hash,
+            password_algo,
+            is_active,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{accountId},
+            #{memberKey},
+            #{username},
+            #{fullname},
+            #{email},
+            NULL,
+            #{passwordHash},
+            #{passwordAlgo},
+            #{active},
+            #{actor},
+            #{actor},
+            #{now},
+            #{now}
+        )
+    </insert>
+
+    <update id="updateAccount">
+        UPDATE tbl_auth_user_account
+        SET fullname = #{fullname},
+            email = #{email},
+            is_active = #{active},
+            updated_by = #{actor},
+            updated_at = #{now}
+        WHERE user_account_id = #{accountId}
+    </update>
+
+    <update id="updateMemberRole">
+        UPDATE tbl_dim_member_pseudonym
+        SET role_id = #{roleId},
+            team_id = NULL,
+            updated_by = #{actor},
+            updated_at = #{now}
+        WHERE member_key = #{memberKey}
+    </update>
+
+    <update id="updateActive">
+        UPDATE tbl_auth_user_account
+        SET is_active = #{active},
+            updated_by = #{actor},
+            updated_at = #{now}
+        WHERE user_account_id = #{accountId}
+    </update>
+
+    <update id="updatePassword">
+        UPDATE tbl_auth_user_account
+        SET password_hash = #{passwordHash},
+            password_algo = #{passwordAlgo},
+            updated_by = #{actor},
+            updated_at = #{now}
+        WHERE user_account_id = #{accountId}
+    </update>
+</mapper>

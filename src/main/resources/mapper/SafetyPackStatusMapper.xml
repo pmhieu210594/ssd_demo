@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sdd.platform.infrastructure.persistence.mapper.SafetyPackStatusMapper">
+
+    <resultMap id="safetyPackStatusResultMap" type="SafetyPackStatus">
+        <id column="safety_pack_status_id"
+            property="safetyPackStatusId"
+            javaType="java.util.UUID"
+            typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repository_id" property="repositoryId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="repository_name_masked" property="repositoryNameMasked"/>
+        <result column="claude_md_exists" property="claudeMdExists"/>
+        <result column="settings_json_exists" property="settingsJsonExists"/>
+        <result column="rules_exists" property="rulesExists"/>
+        <result column="deny_rule_count" property="denyRuleCount"/>
+        <result column="ask_rule_count" property="askRuleCount"/>
+        <result column="allow_rule_count" property="allowRuleCount"/>
+        <result column="reviewed_flag" property="reviewedFlag"/>
+        <result column="reviewed_by_role_id" property="reviewedByRoleId"
+                javaType="java.util.UUID"
+                typeHandler="com.sdd.platform.infrastructure.persistence.typehandler.UUIDTypeHandler"/>
+        <result column="last_updated_at" property="lastUpdatedAt"/>
+        <result column="collected_at" property="collectedAt"/>
+        <result column="branch_name" property="branchName"/>
+        <result column="commit_sha" property="commitSha"/>
+        <result column="scan_status" property="scanStatus"/>
+        <result column="settings_parse_status" property="settingsParseStatus"/>
+        <result column="content_hash" property="contentHash"/>
+        <result column="missing_items_summary" property="missingItemsSummary"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="updated_by" property="updatedBy"/>
+    </resultMap>
+
+    <sql id="columns">
+        safety_pack_status_id, repository_id, repository_name_masked,
+        claude_md_exists, settings_json_exists, rules_exists,
+        deny_rule_count, ask_rule_count, allow_rule_count,
+        reviewed_flag, reviewed_by_role_id, last_updated_at, collected_at,
+        branch_name, commit_sha, scan_status, settings_parse_status,
+        content_hash, missing_items_summary,
+        created_at, created_by, updated_at, updated_by
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO tbl_fact_safety_pack_status (
+            <include refid="columns"/>
+        ) VALUES (
+            #{safetyPackStatusId},
+            #{repositoryId},
+            #{repositoryNameMasked},
+            #{claudeMdExists},
+            #{settingsJsonExists},
+            #{rulesExists},
+            #{denyRuleCount},
+            #{askRuleCount},
+            #{allowRuleCount},
+            #{reviewedFlag},
+            #{reviewedByRoleId},
+            #{lastUpdatedAt},
+            #{collectedAt},
+            #{branchName},
+            #{commitSha},
+            #{scanStatus},
+            #{settingsParseStatus},
+            #{contentHash},
+            #{missingItemsSummary},
+            #{createdAt},
+            #{createdBy},
+            #{updatedAt},
+            #{updatedBy}
+        )
+        ON CONFLICT (repository_id, commit_sha) DO UPDATE
+        SET repository_name_masked = EXCLUDED.repository_name_masked,
+            claude_md_exists = EXCLUDED.claude_md_exists,
+            settings_json_exists = EXCLUDED.settings_json_exists,
+            rules_exists = EXCLUDED.rules_exists,
+            deny_rule_count = EXCLUDED.deny_rule_count,
+            ask_rule_count = EXCLUDED.ask_rule_count,
+            allow_rule_count = EXCLUDED.allow_rule_count,
+            reviewed_flag = EXCLUDED.reviewed_flag,
+            reviewed_by_role_id = EXCLUDED.reviewed_by_role_id,
+            last_updated_at = EXCLUDED.last_updated_at,
+            collected_at = EXCLUDED.collected_at,
+            branch_name = EXCLUDED.branch_name,
+            scan_status = EXCLUDED.scan_status,
+            settings_parse_status = EXCLUDED.settings_parse_status,
+            content_hash = EXCLUDED.content_hash,
+            missing_items_summary = EXCLUDED.missing_items_summary,
+            updated_at = EXCLUDED.updated_at,
+            updated_by = EXCLUDED.updated_by
+    </insert>
+
+    <update id="update">
+        UPDATE tbl_fact_safety_pack_status
+        SET repository_name_masked = #{repositoryNameMasked},
+            claude_md_exists = #{claudeMdExists},
+            settings_json_exists = #{settingsJsonExists},
+            rules_exists = #{rulesExists},
+            deny_rule_count = #{denyRuleCount},
+            ask_rule_count = #{askRuleCount},
+            allow_rule_count = #{allowRuleCount},
+            reviewed_flag = #{reviewedFlag},
+            reviewed_by_role_id = #{reviewedByRoleId},
+            last_updated_at = #{lastUpdatedAt},
+            collected_at = #{collectedAt},
+            branch_name = #{branchName},
+            commit_sha = #{commitSha},
+            scan_status = #{scanStatus},
+            settings_parse_status = #{settingsParseStatus},
+            content_hash = #{contentHash},
+            missing_items_summary = #{missingItemsSummary},
+            updated_at = #{updatedAt},
+            updated_by = #{updatedBy}
+        WHERE safety_pack_status_id = #{safetyPackStatusId}
+    </update>
+
+    <select id="findRecent" resultMap="safetyPackStatusResultMap">
+        SELECT <include refid="columns"/>
+        FROM tbl_fact_safety_pack_status
+        ORDER BY collected_at DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

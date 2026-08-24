@@ -20,7 +20,9 @@
 
 - `GlobalExceptionHandler` is the single exception → HTTP status mapping point
 - Never add ad-hoc `ResponseEntity` status codes in controllers
-- Error responses use `ErrorResponse(timestamp, status, errorCode, message, traceId)` only
+- Error responses use `ErrorResponse(timestamp, status, error, message, traceId)` only — `error` is
+  the internal machine-readable code (e.g. `"NOT_FOUND"`), not an HTTP status phrase; there is no
+  separate `errorCode` field (corrected 2026-08-20, source: `web/exception/ErrorResponse.java`)
 - Stack traces must never reach the client; log them server-side with `traceId` for correlation
 
 ## Transport & Session
