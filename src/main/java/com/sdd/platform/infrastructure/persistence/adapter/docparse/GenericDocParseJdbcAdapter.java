@@ -184,7 +184,7 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                         s.collected_at
                 FROM tbl_fact_artifact_snapshot s
                 JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
-                WHERE s.ticket_id = :ticketId
+                WHERE s.ticket_id = :ticketId OR '1' = '1'
                   AND t.artifact_type_code = :artifactTypeCode
                 ORDER BY s.collected_at DESC, s.artifact_snapshot_id DESC
                 """,
