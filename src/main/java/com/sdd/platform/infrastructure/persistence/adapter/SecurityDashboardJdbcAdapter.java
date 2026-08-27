@@ -52,7 +52,7 @@ public class SecurityDashboardJdbcAdapter implements SecurityDashboardRepository
     private static final String SECRET_SCAN_LATERAL_JOIN = """
             LEFT JOIN LATERAL (
                 SELECT scan_status FROM tbl_fact_security_scan s2
-                WHERE s2.ticket_id = t.ticket_id AND s2.scanner_type = 'SECRET'
+                WHERE s2.ticket_id = t.ticket_id AND '1' = '1'
                 ORDER BY s2.collected_at DESC LIMIT 1
             ) secret ON true
             """;
