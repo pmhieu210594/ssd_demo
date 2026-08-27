@@ -34,7 +34,7 @@ public class QaDashboardJdbcAdapter implements QaDashboardRepositoryPort {
                 SELECT DISTINCT ON (s.ticket_id)
                        s.ticket_id,
                        s.repository_id
-                FROM tbl_fact_artifact_snapshot s
+                FROM tbl_fact_artifact_snapshot s --
                 ORDER BY s.ticket_id, s.collected_at DESC NULLS LAST
             )
             """;
