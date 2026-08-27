@@ -6,25 +6,19 @@ import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorMode
 import com.sdd.platform.application.port.out.integration.GithubPullRequestFilesPort;
 import com.sdd.platform.application.port.out.persistence.ArtifactScannerPersistencePort;
 import com.sdd.platform.application.port.out.integration.ArtifactScannerSourcePort;
+import com.sdd.platform.application.usecase.docparse.DocParseModels;
 import com.sdd.platform.application.usecase.docparse.ImplPlanParseService;
 import com.sdd.platform.application.usecase.docparse.TestPlanParseService;
 import com.sdd.platform.application.usecase.docparse.TestResultsParseService;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ArtifactScanMode;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ArtifactScanRequest;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ArtifactScanTriggerType;
-import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ArtifactTypeScope;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.RepositoryScope;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ScanRun;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerService;
-import com.sdd.platform.application.port.out.persistence.AiFindingStatPort.AiFindingStatRecord;
 import com.sdd.platform.config.AppProperties;
-import com.sdd.platform.domain.service.markdown.aireviewstats.AiReviewStatsParser;
-import com.sdd.platform.domain.service.markdown.aireviewstats.AiReviewStatsParser.AiReviewStats;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownSection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -38,8 +32,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Receives raw bytes from {@link com.sdd.platform.web.webhook.GithubWebhookController}
@@ -74,10 +66,6 @@ public class GithubWebhookService {
     private final TestPlanParseService testPlanParseService;
     private final TestResultsParseService testResultsParseService;
     private final ObjectMapper objectMapper;
-    private final TemplateUsageStatWriter templateUsageStatWriter;
-    private final AiFindingStatWriter aiFindingStatWriter;
-    private final MarkdownParserCore markdownParserCore = new MarkdownParserCore();
-    private final AiReviewStatsParser aiReviewStatsParser = new AiReviewStatsParser();
 
     public GithubWebhookService(AppProperties props,
                                 ArtifactScannerPersistencePort artifactScannerPersistence,
@@ -89,9 +77,7 @@ public class GithubWebhookService {
                                 ImplPlanParseService implPlanParseService,
                                 TestPlanParseService testPlanParseService,
                                 TestResultsParseService testResultsParseService,
-                                ObjectMapper objectMapper,
-                                TemplateUsageStatWriter templateUsageStatWriter,
-                                AiFindingStatWriter aiFindingStatWriter) {
+                                ObjectMapper objectMapper) {
         this.props = props;
         this.artifactScannerPersistence = artifactScannerPersistence;
         this.artifactScannerService = artifactScannerService;
@@ -103,8 +89,6 @@ public class GithubWebhookService {
         this.testPlanParseService = testPlanParseService;
         this.testResultsParseService = testResultsParseService;
         this.objectMapper = objectMapper;
-        this.templateUsageStatWriter = templateUsageStatWriter;
-        this.aiFindingStatWriter = aiFindingStatWriter;
     }
 
     /**
@@ -257,10 +241,6 @@ public class GithubWebhookService {
                     securityEvidenceResult.handled(),
                     securityEvidenceResult.recordsAffected());
         }
-        if ("closed".equals(action) && pullRequest.path("merged").asBoolean(false)) {
-            validateTemplateUsage(repoKey, changedFilePaths, revision,
-                    repository.get().projectId(), repository.get().repositoryId(), deliveryId);
-        }
         if (ticketKeys.isEmpty()) {
             log.info("GitHub pull_request delivery={} no docs/changes/<TICKET>/ files in diff for repo {} pr #{}; falling back to repo tree scan",
                     deliveryId, repoKey, prNumber);
@@ -301,10 +281,6 @@ public class GithubWebhookService {
         for (String ticketKey : ticketKeys) {
             ticketScopes.put(ticketKey, artifactScannerPersistence.upsertMinimalTicket(repository.get().projectId(), ticketKey, title, ticketStatus, lastCommitAt));
         }
-        if ("closed".equals(action) && pullRequest.path("merged").asBoolean(false)) {
-            recordAiFindingStats(repoKey, changedFilePaths, revision,
-                    repository.get().projectId(), repository.get().repositoryId(), ticketScopes, deliveryId);
-        }
 
         if (!shouldTriggerScan(action)) {
             log.info("GitHub pull_request delivery={} updated ticket scopes {} status={} lastCommitAt={} without scan",
@@ -331,6 +307,264 @@ public class GithubWebhookService {
 
         int affected = ticketKeys.size() + collectorResult.processedPrCount() + collectorResult.processedCommitCount() + collectorResult.processedChangedFileCount() + run.recordsWritten();
         return new Result("pull_request:" + action, affected);
+    }
+
+    private void draftParseImplPlan(RepositoryScope repository,
+                                    String repoKey,
+                                    String revision,
+                                    Map<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketScopes,
+                                    String deliveryId) {
+        if (ticketScopes == null || ticketScopes.isEmpty()) {
+            return;
+        }
+
+        ArtifactScannerSourcePort.ResolvedRevision resolved = artifactScannerSourcePort.resolveRevision(repoKey, revision);
+        var tree = artifactScannerSourcePort.listTree(repoKey, resolved.revisionSha());
+        for (Map.Entry<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketEntry : ticketScopes.entrySet()) {
+            String ticketKey = ticketEntry.getKey();
+            var ticket = ticketEntry.getValue();
+            if (ticket == null) {
+                log.warn("GitHub pull_request delivery={} skipping draft parse because ticket scope is missing for repo={} ticket={}", deliveryId, repoKey, ticketKey);
+                continue;
+            }
+            String sourcePath = resolveChangesFilePath(tree, ticketKey, "impl-plan.md");
+            try {
+                var entry = tree.get(sourcePath);
+                log.info("GitHub pull_request delivery={} draft parse source repo={} ticket={} path={} exists={}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        entry != null);
+                byte[] sourceBytes = entry == null ? null : artifactScannerSourcePort.readBlob(repoKey, entry.sha());
+                String sourceText = sourceBytes == null ? null : new String(sourceBytes, StandardCharsets.UTF_8);
+
+                var result = implPlanParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        sourceText,
+                        "impl-plan-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object resultStatus = result == null ? null : result.parseStatus();
+                Object resultSnapshotId = (result == null || result.snapshot() == null) ? null : result.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    resultStatus,
+                    resultSnapshotId);
+            } catch (Exception ex) {
+                log.warn(
+                        "GitHub pull_request delivery={} draft parse failed for repo={} ticket={} path={}: {}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        ex.getMessage(),
+                        ex
+                );
+                var fallback = implPlanParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        "",
+                        "impl-plan-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object fallbackStatus = fallback == null ? null : fallback.parseStatus();
+                Object fallbackSnapshotId = (fallback == null || fallback.snapshot() == null) ? null : fallback.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse fallback stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    fallbackStatus,
+                    fallbackSnapshotId);
+            }
+        }
+    }
+
+    private void draftParseTestPlan(RepositoryScope repository,
+                                    String repoKey,
+                                    String revision,
+                                    Map<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketScopes,
+                                    String deliveryId) {
+        if (ticketScopes == null || ticketScopes.isEmpty()) {
+            return;
+        }
+
+        ArtifactScannerSourcePort.ResolvedRevision resolved = artifactScannerSourcePort.resolveRevision(repoKey, revision);
+        var tree = artifactScannerSourcePort.listTree(repoKey, resolved.revisionSha());
+        for (Map.Entry<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketEntry : ticketScopes.entrySet()) {
+            String ticketKey = ticketEntry.getKey();
+            var ticket = ticketEntry.getValue();
+            if (ticket == null) {
+                log.warn("GitHub pull_request delivery={} skipping draft parse because ticket scope is missing for repo={} ticket={}", deliveryId, repoKey, ticketKey);
+                continue;
+            }
+            String sourcePath = "docs/changes/" + ticketKey + "/test-plan.md";
+            try {
+                var entry = tree.get(sourcePath);
+                log.info("GitHub pull_request delivery={} draft parse source repo={} ticket={} path={} exists={}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        entry != null);
+                byte[] sourceBytes = entry == null ? null : artifactScannerSourcePort.readBlob(repoKey, entry.sha());
+                String sourceText = sourceBytes == null ? null : new String(sourceBytes, StandardCharsets.UTF_8);
+
+                var result = testPlanParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        sourceText,
+                        "test-plan-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object resultStatus = result == null ? null : result.parseStatus();
+                Object resultSnapshotId = (result == null || result.snapshot() == null) ? null : result.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    resultStatus,
+                    resultSnapshotId);
+            } catch (Exception ex) {
+                log.warn(
+                        "GitHub pull_request delivery={} draft parse failed for repo={} ticket={} path={}: {}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        ex.getMessage(),
+                        ex
+                );
+                var fallback = testPlanParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        "",
+                        "test-plan-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object fallbackStatus = fallback == null ? null : fallback.parseStatus();
+                Object fallbackSnapshotId = (fallback == null || fallback.snapshot() == null) ? null : fallback.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse fallback stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    fallbackStatus,
+                    fallbackSnapshotId);
+            }
+        }
+    }
+
+    private void draftParseTestResults(RepositoryScope repository,
+                                       String repoKey,
+                                       String revision,
+                                       Map<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketScopes,
+                                       String deliveryId) {
+        if (ticketScopes == null || ticketScopes.isEmpty()) {
+            return;
+        }
+
+        ArtifactScannerSourcePort.ResolvedRevision resolved = artifactScannerSourcePort.resolveRevision(repoKey, revision);
+        var tree = artifactScannerSourcePort.listTree(repoKey, resolved.revisionSha());
+        for (Map.Entry<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketEntry : ticketScopes.entrySet()) {
+            String ticketKey = ticketEntry.getKey();
+            var ticket = ticketEntry.getValue();
+            if (ticket == null) {
+                log.warn("GitHub pull_request delivery={} skipping draft parse because ticket scope is missing for repo={} ticket={}", deliveryId, repoKey, ticketKey);
+                continue;
+            }
+            String sourcePath = "docs/changes/" + ticketKey + "/test-results.md";
+            try {
+                var entry = tree.get(sourcePath);
+                log.info("GitHub pull_request delivery={} draft parse source repo={} ticket={} path={} exists={}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        entry != null);
+                byte[] sourceBytes = entry == null ? null : artifactScannerSourcePort.readBlob(repoKey, entry.sha());
+                String sourceText = sourceBytes == null ? null : new String(sourceBytes, StandardCharsets.UTF_8);
+
+                var result = testResultsParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        sourceText,
+                        "test-results-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object resultStatus = result == null ? null : result.parseStatus();
+                Object resultSnapshotId = (result == null || result.snapshot() == null) ? null : result.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    resultStatus,
+                    resultSnapshotId);
+            } catch (Exception ex) {
+                log.warn(
+                        "GitHub pull_request delivery={} draft parse failed for repo={} ticket={} path={}: {}",
+                        deliveryId,
+                        repoKey,
+                        ticketKey,
+                        sourcePath,
+                        ex.getMessage(),
+                        ex
+                );
+                var fallback = testResultsParseService.parseAndStore(new DocParseModels.ParseRequest(
+                        repository.projectId(),
+                        repository.repositoryId(),
+                        ticket.ticketId(),
+                        DocParseModels.ParseMode.DRAFT,
+                        sourcePath,
+                        "",
+                        "test-results-parser",
+                        "v1",
+                        deliveryId,
+                        "CI_PENDING"
+                ));
+                Object fallbackStatus = fallback == null ? null : fallback.parseStatus();
+                Object fallbackSnapshotId = (fallback == null || fallback.snapshot() == null) ? null : fallback.snapshot().artifactSnapshotId();
+                log.info("GitHub pull_request delivery={} draft parse fallback stored repo={} ticket={} path={} status={} snapshotId={}",
+                    deliveryId,
+                    repoKey,
+                    ticketKey,
+                    sourcePath,
+                    fallbackStatus,
+                    fallbackSnapshotId);
+            }
+        }
     }
 
     private Result handlePullRequestReviewComment(JsonNode payload, String deliveryId) {
@@ -373,7 +607,7 @@ public class GithubWebhookService {
 
     private Result handlePullRequestReview(JsonNode payload, String deliveryId) {
         String action = payload.path("action").asText("");
-        if (!"submitted".equals(action) && !"dismissed".equals(action) && !"edited".equals(action)) {
+        if (!"submitted".equals(action) && !"dismissed".equals(action)) {
             return new Result("pull_request_review:" + action, 0);
         }
 
@@ -498,197 +732,6 @@ public class GithubWebhookService {
                 .distinct()
                 .sorted()
                 .toList();
-    }
-
-    private static final String TEMPLATE_BASE_PATH = "documents/docs/standards/templates/";
-
-    private void validateTemplateUsage(String repoKey, List<String> changedFilePaths, String revision,
-            UUID projectId, UUID repositoryId, String deliveryId) {
-        List<String> eligiblePaths = changedFilePaths == null ? List.of()
-                : changedFilePaths.stream()
-                        .filter(path -> path != null && !path.isBlank() && ticketKeyFromPath(path) != null)
-                        .toList();
-        if (eligiblePaths.isEmpty()) {
-            return;
-        }
-
-        Map<String, UUID> phaseIdByFileName = artifactScannerPersistence.findArtifactTypes().stream()
-                .filter(scope -> scope.defaultFileName() != null && !scope.defaultFileName().isBlank())
-                .collect(Collectors.toMap(ArtifactTypeScope::defaultFileName, ArtifactTypeScope::phaseId, (a, b) -> a));
-
-        Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree;
-        try {
-            ArtifactScannerSourcePort.ResolvedRevision resolved = artifactScannerSourcePort.resolveRevision(repoKey, revision);
-            tree = artifactScannerSourcePort.listTree(repoKey, resolved.revisionSha());
-        } catch (WebClientResponseException ex) {
-            if (isSkippableFetchError(ex)) {
-                log.warn("GitHub pull_request delivery={} template-usage validation skipped: cannot resolve revision/tree for repo={} revision={} due to {}: {}",
-                        deliveryId, repoKey, revision, ex.getStatusCode(), ex.getMessage());
-                return;
-            }
-            throw ex;
-        }
-
-        for (String path : eligiblePaths) {
-            String fileName = fileNameOf(path);
-            UUID phaseId = phaseIdByFileName.get(fileName);
-            if (phaseId == null) {
-                continue;
-            }
-            String templatePath = resolveTemplatePath(tree, fileName);
-            if (templatePath == null) {
-                continue;
-            }
-            String changedContent;
-            String templateContent;
-            try {
-                changedContent = fetchTemplateUsageBlob(repoKey, tree, path, deliveryId);
-                templateContent = fetchTemplateUsageBlob(repoKey, tree, templatePath, deliveryId);
-            } catch (WebClientResponseException ex) {
-                if (isSkippableFetchError(ex)) {
-                    log.warn("GitHub pull_request delivery={} template-usage: skipping file={} template={} due to {}: {}",
-                            deliveryId, path, templatePath, ex.getStatusCode(), ex.getMessage());
-                    continue;
-                }
-                throw ex;
-            }
-            if (changedContent == null || templateContent == null) {
-                continue;
-            }
-            boolean matched = headerStructureMatches(changedContent, path, templateContent, templatePath);
-            try {
-                templateUsageStatWriter.recordIndependently(projectId, repositoryId, phaseId, matched);
-            } catch (DataAccessException ex) {
-                log.warn("GitHub pull_request delivery={} template-usage: counter write failed for project={} repository={} phase={} path={}: {}",
-                        deliveryId, projectId, repositoryId, phaseId, path, ex.getMessage());
-            }
-        }
-    }
-
-    private static final String AI_REVIEW_FILE_NAME = "ai-review.md";
-
-    private void recordAiFindingStats(String repoKey, List<String> changedFilePaths, String revision,
-            UUID projectId, UUID repositoryId,
-            Map<String, com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope> ticketScopes,
-            String deliveryId) {
-        List<String> eligiblePaths = changedFilePaths == null ? List.of()
-                : changedFilePaths.stream()
-                        .filter(path -> path != null && AI_REVIEW_FILE_NAME.equals(fileNameOf(path))
-                                && ticketKeyFromPath(path) != null)
-                        .toList();
-        if (eligiblePaths.isEmpty()) {
-            return;
-        }
-
-        Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree;
-        try {
-            ArtifactScannerSourcePort.ResolvedRevision resolved = artifactScannerSourcePort.resolveRevision(repoKey, revision);
-            tree = artifactScannerSourcePort.listTree(repoKey, resolved.revisionSha());
-        } catch (WebClientResponseException ex) {
-            if (isSkippableFetchError(ex)) {
-                log.warn("GitHub pull_request delivery={} ai-finding-stats: cannot resolve revision/tree for repo={} revision={} due to {}: {}",
-                        deliveryId, repoKey, revision, ex.getStatusCode(), ex.getMessage());
-                return;
-            }
-            throw ex;
-        }
-
-        for (String path : eligiblePaths) {
-            String ticketKey = ticketKeyFromPath(path);
-            var ticketScope = ticketScopes.get(ticketKey);
-            if (ticketScope == null) {
-                continue;
-            }
-
-            String content;
-            try {
-                content = fetchTemplateUsageBlob(repoKey, tree, path, deliveryId);
-            } catch (WebClientResponseException ex) {
-                if (isSkippableFetchError(ex)) {
-                    log.warn("GitHub pull_request delivery={} ai-finding-stats: skipping file={} ticket={} due to {}: {}",
-                            deliveryId, path, ticketKey, ex.getStatusCode(), ex.getMessage());
-                    continue;
-                }
-                throw ex;
-            }
-            if (content == null) {
-                continue;
-            }
-
-            Optional<AiReviewStats> parsed = aiReviewStatsParser.parse(content);
-            if (parsed.isEmpty()) {
-                log.info("GitHub pull_request delivery={} ai-finding-stats: no §8 stats table found for ticket={} path={}",
-                        deliveryId, ticketKey, path);
-                continue;
-            }
-            AiReviewStats stats = parsed.get();
-            try {
-                aiFindingStatWriter.recordStat(new AiFindingStatRecord(
-                        projectId,
-                        repositoryId,
-                        ticketScope.ticketId(),
-                        stats.blockerMajorResolvedCount(),
-                        stats.blockerMajorTotalCount(),
-                        stats.aiReviewAdoptedCount(),
-                        stats.aiReviewFindingTotalCount(),
-                        stats.aiReviewValidCount(),
-                        stats.aiReviewFalsePositiveCount(),
-                        stats.aiReviewResolvedCount()));
-            } catch (DataAccessException ex) {
-                log.warn("GitHub pull_request delivery={} ai-finding-stats: write failed for project={} repository={} ticket={}: {}",
-                        deliveryId, projectId, repositoryId, ticketScope.ticketId(), ex.getMessage());
-            }
-        }
-    }
-
-    private String fileNameOf(String path) {
-        int slashIndex = path.lastIndexOf('/');
-        return slashIndex < 0 ? path : path.substring(slashIndex + 1);
-    }
-
-    private String resolveTemplatePath(Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree, String fileName) {
-        List<String> candidates = List.of(
-                TEMPLATE_BASE_PATH + fileName,
-                TEMPLATE_BASE_PATH + "_ticket-template/" + fileName,
-                TEMPLATE_BASE_PATH + "_light-ticket-template/" + fileName
-        );
-        for (String candidate : candidates) {
-            if (tree.containsKey(candidate)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private String fetchTemplateUsageBlob(String repoKey, Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
-            String path, String deliveryId) {
-        ArtifactScannerSourcePort.GitHubTreeEntry entry = tree.get(path);
-        if (entry == null || entry.sha() == null || entry.sha().isBlank()) {
-            log.warn("GitHub pull_request delivery={} template-usage: no blob sha for path={}", deliveryId, path);
-            return null;
-        }
-        return new String(artifactScannerSourcePort.readBlob(repoKey, entry.sha()), StandardCharsets.UTF_8);
-    }
-
-    private boolean headerStructureMatches(String changedContent, String changedPath, String templateContent, String templatePath) {
-        List<MarkdownSection> changedSections = markdownParserCore.parse(changedContent, changedPath).sections();
-        List<MarkdownSection> templateSections = markdownParserCore.parse(templateContent, templatePath).sections();
-        if (changedSections.size() != templateSections.size()) {
-            return false;
-        }
-        for (int i = 0; i < changedSections.size(); i++) {
-            MarkdownSection changed = changedSections.get(i);
-            MarkdownSection template = templateSections.get(i);
-            if (changed.level() != template.level() || !changed.title().equals(template.title())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isSkippableFetchError(WebClientResponseException ex) {
-        int status = ex.getStatusCode().value();
-        return status == 401 || status == 403 || status == 404;
     }
 
     public record Result(String handled, int recordsAffected) {}

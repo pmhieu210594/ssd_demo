@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.RoleService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.RoleDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,10 +31,10 @@ public class RoleController {
     @GetMapping
     public List<RoleDtos.RoleDto> list(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String sort,
             @CurrentUser AppUser caller
     ) {
-        return service.list(keyword, status, caller).stream()
+        return service.list(keyword, sort, caller).stream()
                 .map(RoleDtos.RoleDto::from)
                 .toList();
     }
@@ -47,7 +46,7 @@ public class RoleController {
 
     @PostMapping
     public ResponseEntity<RoleDtos.RoleDto> create(
-            @Valid @RequestBody RoleDtos.CreateRoleRequest request,
+            @RequestBody RoleDtos.CreateRoleRequest request,
             @CurrentUser AppUser caller
     ) {
         var created = service.create(request.roleName(), request.description(), caller);
@@ -57,7 +56,7 @@ public class RoleController {
     @PutMapping("/{id}")
     public RoleDtos.RoleDto update(
             @PathVariable UUID id,
-            @Valid @RequestBody RoleDtos.UpdateRoleRequest request,
+            @RequestBody RoleDtos.UpdateRoleRequest request,
             @CurrentUser AppUser caller
     ) {
         return RoleDtos.RoleDto.from(service.update(id, request.roleName(), request.description(), caller));

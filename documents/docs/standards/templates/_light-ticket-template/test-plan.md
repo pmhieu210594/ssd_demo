@@ -22,7 +22,7 @@
 ## 5. Additional Test This Time
 | TC ID | test | type | target | related AC |
 |---|---|---|---|---|
-| TC-<TICKET>-1 |---|---|---|---|
+| AC-<TICKET>-1 |---|---|---|---|
 
 ### E2E Step-by-step Scenarios
 

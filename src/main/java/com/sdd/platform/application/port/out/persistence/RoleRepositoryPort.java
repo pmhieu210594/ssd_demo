@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface RoleRepositoryPort {
 
-    List<Role> findActive(String keyword, String status);
+    List<Role> findActive(String keyword, String sort);
 
     Optional<Role> findById(UUID roleId);
 

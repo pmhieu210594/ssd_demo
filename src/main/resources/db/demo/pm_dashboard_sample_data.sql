@@ -150,7 +150,7 @@ SELECT
 FROM tbl_dim_ticket t
 JOIN tbl_dim_phase ph ON ph.phase_code = '1'
 WHERE t.external_ticket_key = 'PM-001'
-ON CONFLICT (ticket_id) DO NOTHING;
+ON CONFLICT (ticket_id, phase_id) DO NOTHING;
 
 INSERT INTO tbl_fact_ticket_phase_status (
     ticket_phase_status_id,
@@ -184,7 +184,7 @@ SELECT
 FROM tbl_dim_ticket t
 JOIN tbl_dim_phase ph ON ph.phase_code = '3'
 WHERE t.external_ticket_key = 'PM-002'
-ON CONFLICT (ticket_id) DO NOTHING;
+ON CONFLICT (ticket_id, phase_id) DO NOTHING;
 
 INSERT INTO tbl_fact_ticket_phase_status (
     ticket_phase_status_id,
@@ -218,7 +218,7 @@ SELECT
 FROM tbl_dim_ticket t
 JOIN tbl_dim_phase ph ON ph.phase_code = '6'
 WHERE t.external_ticket_key = 'PM-003'
-ON CONFLICT (ticket_id) DO NOTHING;
+ON CONFLICT (ticket_id, phase_id) DO NOTHING;
 
 INSERT INTO tbl_fact_ticket_phase_status (
     ticket_phase_status_id,
@@ -252,7 +252,7 @@ SELECT
 FROM tbl_dim_ticket t
 JOIN tbl_dim_phase ph ON ph.phase_code = '8'
 WHERE t.external_ticket_key = 'PM-004'
-ON CONFLICT (ticket_id) DO NOTHING;
+ON CONFLICT (ticket_id, phase_id) DO NOTHING;
 
 INSERT INTO tbl_fact_artifact_snapshot (
     artifact_snapshot_id,
@@ -292,7 +292,7 @@ SELECT
     'spec-pack-001',
     FALSE,
     'hash-spec-pack-001',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -354,7 +354,7 @@ SELECT
     'sources-001',
     TRUE,
     'hash-sources-001',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -416,7 +416,7 @@ SELECT
     'impl-plan-002',
     TRUE,
     'hash-impl-plan-002',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -478,7 +478,7 @@ SELECT
     'test-plan-003',
     TRUE,
     'hash-test-plan-003',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -540,7 +540,7 @@ SELECT
     'test-results-003',
     FALSE,
     'hash-test-results-003',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -602,7 +602,7 @@ SELECT
     'report-004',
     TRUE,
     'hash-report-004',
-    1,
+    'sdd-artifact-v1',
     TRUE,
     FALSE,
     '[]'::jsonb,
@@ -937,7 +937,6 @@ INSERT INTO tbl_fact_exception (
     approved_at,
     expiry_date,
     follow_up_status,
-    status,
     linked_report_path,
     created_at,
     created_by,
@@ -958,7 +957,6 @@ SELECT
     rr.role_id,
     NULL,
     NULL,
-    'OPEN',
     'OPEN',
     '/reports/pm-001-report.md',
     now() - interval '2 day',
@@ -986,7 +984,6 @@ INSERT INTO tbl_fact_exception (
     approved_at,
     expiry_date,
     follow_up_status,
-    status,
     linked_report_path,
     created_at,
     created_by,

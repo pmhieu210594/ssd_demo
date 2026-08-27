@@ -80,6 +80,8 @@ class CiRunMetadataServiceTest {
                 "GITHUB_ACTIONS",
                 "CI",
                 "build",
+                "27660577827",
+                "77123456789",
                 "https://github.com/acme/widget/actions/runs/27660577827/job/77123456789",
                 "SUCCESS",
                 OffsetDateTime.parse("2026-06-17T02:00:00Z"),

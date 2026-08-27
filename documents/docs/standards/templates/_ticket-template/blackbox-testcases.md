@@ -8,8 +8,8 @@
 
 ## Test Case Summary
 
-| case ID | AC ID | priority | category | title | status |
-|---|---|---|---|---|---|
+| case ID | AC ID | priority | category | title |
+|---|---|---|---|---|
 
 ## Test Cases
 

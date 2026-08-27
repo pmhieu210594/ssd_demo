@@ -11,117 +11,87 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class RoleService {
 
     private static final int ROLE_NAME_MAX_LENGTH = 100;
-    private static final String MODULE = "ROLE";
-    private static final String ENTITY_TYPE = "ROLE";
 
     private final RoleRepositoryPort repository;
-    private final AdminAuditLogService adminAuditLogService;
 
-    public RoleService(RoleRepositoryPort repository, AdminAuditLogService adminAuditLogService) {
+    public RoleService(RoleRepositoryPort repository) {
         this.repository = repository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
-    public List<Role> list(String keyword, String status, AppUser caller) {
+    public List<Role> list(String keyword, String sort, AppUser caller) {
         requireCanView(caller);
-        return repository.findActive(trimToNull(keyword), normalizeStatusFilter(status));
+        return repository.findActive(trimToNull(keyword), normalizeSort(sort));
     }
 
     @Transactional(readOnly = true)
     public Role get(UUID roleId, AppUser caller) {
         requireCanView(caller);
-        Role role = repository.findById(roleId)
+        return repository.findActiveById(roleId)
                 .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
-        return role;
     }
 
     @Transactional
     public Role create(String roleName, String description, AppUser caller) {
         requireCanMutate(caller);
-        try {
-            String normalizedName = normalizeRequired(roleName);
-            String normalizedDescription = normalizeDescription(description);
-            ensureUniqueName(normalizedName, null);
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
+        String normalizedName = normalizeRequired(roleName);
+        String normalizedDescription = normalizeDescription(description);
+        ensureUniqueName(normalizedName, null);
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
 
-            Role role = Role.builder()
-                    .roleId(UUID.randomUUID())
-                    .roleName(normalizedName)
-                    .description(normalizedDescription)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .deleteFlag(0)
-                    .status(Role.RoleStatus.ACTIVE)
-                    .build();
-            Role created = repository.insert(role);
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getRoleId().toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        Role role = Role.builder()
+                .roleId(UUID.randomUUID())
+                .roleName(normalizedName)
+                .description(normalizedDescription)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .deleteFlag(0)
+                .build();
+        return repository.insert(role);
     }
 
     @Transactional
     public Role update(UUID roleId, String roleName, String description, AppUser caller) {
         requireCanMutate(caller);
-        try {
-            Role existing = repository.findActiveById(roleId)
-                    .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-            String normalizedName = normalizeRequired(roleName);
-            String normalizedDescription = normalizeDescription(description);
-            ensureUniqueName(normalizedName, roleId);
+        Role existing = repository.findActiveById(roleId)
+                .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
+        String normalizedName = normalizeRequired(roleName);
+        String normalizedDescription = normalizeDescription(description);
+        ensureUniqueName(normalizedName, roleId);
 
-            existing.setRoleName(normalizedName);
-            existing.setDescription(normalizedDescription);
-            existing.setUpdatedAt(OffsetDateTime.now());
-            existing.setUpdatedBy(resolveActor(caller));
+        existing.setRoleName(normalizedName);
+        existing.setDescription(normalizedDescription);
+        existing.setUpdatedAt(OffsetDateTime.now());
+        existing.setUpdatedBy(resolveActor(caller));
 
-            int affected = repository.update(existing);
-            if (affected == 0) {
-                throw new NotFoundException("Pages.RoleManagement.NotFound");
-            }
-            Role updated = repository.findActiveById(roleId)
-                    .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, roleId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, roleId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        int affected = repository.update(existing);
+        if (affected == 0) {
+            throw new NotFoundException("Pages.RoleManagement.NotFound");
         }
+        return repository.findActiveById(roleId)
+                .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
     }
 
     @Transactional
     public Role logicalDelete(UUID roleId, AppUser caller) {
         requireCanDelete(caller);
-        try {
-            Role before = repository.findActiveById(roleId)
-                    .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
-            int affected = repository.logicalDelete(roleId, resolveActor(caller), OffsetDateTime.now());
-            if (affected == 0) {
-                throw new NotFoundException("Pages.RoleManagement.NotFound");
-            }
-            Role deleted = repository.findById(roleId)
-                    .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, roleId.toString(), before);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, roleId.toString(), "DELETE", ex.getMessage());
-            throw ex;
+        repository.findActiveById(roleId)
+                .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
+        int affected = repository.logicalDelete(roleId, resolveActor(caller), OffsetDateTime.now());
+        if (affected == 0) {
+            throw new NotFoundException("Pages.RoleManagement.NotFound");
         }
+        return repository.findById(roleId)
+                .orElseThrow(() -> new NotFoundException("Pages.RoleManagement.NotFound"));
     }
 
     private void requireCanView(AppUser caller) {
@@ -162,12 +132,18 @@ public class RoleService {
         return value.trim();
     }
 
-    private String normalizeStatusFilter(String status) {
-        String normalized = status == null || status.isBlank() ? "ACTIVE" : status.trim().toUpperCase(Locale.ROOT);
-        if (!"ALL".equals(normalized) && !"ACTIVE".equals(normalized) && !"DELETED".equals(normalized)) {
-            throw new BusinessRuleException("Pages.RoleManagement.Status.Invalid");
+    private String normalizeSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return "roleNameAsc";
         }
-        return normalized;
+        String normalized = sort.trim();
+        if ("roleName".equals(normalized) || "roleNameAsc".equals(normalized)) {
+            return "roleNameAsc";
+        }
+        if ("-roleName".equals(normalized) || "roleNameDesc".equals(normalized)) {
+            return "roleNameDesc";
+        }
+        throw new BusinessRuleException("Pages.RoleManagement.SortInvalid");
     }
 
     private void ensureUniqueName(String roleName, UUID excludeRoleId) {

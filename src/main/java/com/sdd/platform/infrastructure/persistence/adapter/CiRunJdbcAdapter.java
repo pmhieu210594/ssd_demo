@@ -4,7 +4,6 @@ import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.CiRunMetadataView;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.ConnectorScope;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.PullRequestScope;
-import com.sdd.platform.domain.model.CiJob;
 import com.sdd.platform.domain.model.CiRun;
 import com.sdd.platform.domain.model.ConnectorRun;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -182,19 +181,21 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
     }
 
     @Override
-    public Optional<UUID> findCiRunIdByIdentity(String ciProvider, UUID repositoryId, String externalRunId) {
+    public Optional<UUID> findCiRunIdByIdentity(String ciProvider, UUID repositoryId, String externalRunId, String externalJobId) {
         var rows = jdbc.query("""
                 SELECT ci_run_id
                 FROM tbl_fact_ci_run
                 WHERE ci_provider = :ciProvider
                   AND repository_id = :repositoryId
                   AND COALESCE(external_run_id, external_ci_run_id) = :externalRunId
+                  AND external_job_id = :externalJobId
                 LIMIT 1
                 """,
                 new MapSqlParameterSource()
                         .addValue("ciProvider", ciProvider)
                         .addValue("repositoryId", repositoryId)
-                        .addValue("externalRunId", externalRunId),
+                        .addValue("externalRunId", externalRunId)
+                        .addValue("externalJobId", externalJobId),
                 (rs, rowNum) -> rs.getObject("ci_run_id", UUID.class));
         return rows.stream().findFirst();
     }
@@ -212,7 +213,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     COALESCE(c.project_id, r.project_id) AS project_id,
                     c.ci_provider,
                     c.workflow_name,
+                    c.job_name,
                     COALESCE(c.external_run_id, c.external_ci_run_id) AS external_run_id,
+                    c.external_job_id,
                     c.ci_url,
                     c.status::text AS status,
                     c.started_at,
@@ -233,36 +236,6 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
     }
 
     @Override
-    public Optional<CiRunMetadataView> findFirstCiRunByTicketId(UUID ticketId) {
-        if (ticketId == null) {
-            return Optional.empty();
-        }
-        var rows = jdbc.query("""
-                SELECT
-                    c.ci_run_id,
-                    c.repository_id,
-                    COALESCE(r.repo_name_masked, c.repository_id::text) AS repository_name_masked,
-                    COALESCE(c.project_id, r.project_id) AS project_id,
-                    c.ci_provider,
-                    c.workflow_name,
-                    COALESCE(c.external_run_id, c.external_ci_run_id) AS external_run_id,
-                    c.ci_url,
-                    c.status::text AS status,
-                    c.started_at,
-                    COALESCE(c.completed_at, c.finished_at) AS completed_at,
-                    COALESCE(c.updated_at, c.created_at, c.collected_at, now()) AS collected_at
-                FROM tbl_fact_ci_run c
-                LEFT JOIN tbl_dim_repository r ON r.repository_id = c.repository_id
-                WHERE c.ticket_id = :ticketId
-                ORDER BY c.started_at ASC NULLS LAST, c.ci_run_id ASC
-                LIMIT 1
-                """,
-                new MapSqlParameterSource("ticketId", ticketId),
-                this::mapCiRunMetadata);
-        return rows.stream().findFirst();
-    }
-
-    @Override
     public List<CiRunMetadataView> findRecentCiRuns(int limit) {
         int normalizedLimit = Math.max(1, Math.min(limit, 100));
         return jdbc.query("""
@@ -273,7 +246,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     COALESCE(c.project_id, r.project_id) AS project_id,
                     c.ci_provider,
                     c.workflow_name,
+                    c.job_name,
                     COALESCE(c.external_run_id, c.external_ci_run_id) AS external_run_id,
+                    c.external_job_id,
                     c.ci_url,
                     c.status::text AS status,
                     c.started_at,
@@ -292,7 +267,7 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
     public CiRun insertCiRun(CiRun run) {
         UUID id = run.getId() == null ? UUID.randomUUID() : run.getId();
         run.setId(id);
-        UUID actualId = jdbc.queryForObject("""
+        jdbc.queryForObject("""
                 INSERT INTO tbl_fact_ci_run (
                     ci_run_id,
                     project_id,
@@ -303,7 +278,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     ci_provider,
                     external_ci_run_id,
                     external_run_id,
+                    external_job_id,
                     workflow_name,
+                    job_name,
                     status,
                     started_at,
                     completed_at,
@@ -321,7 +298,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     :ciProvider,
                     :externalRunId,
                     :externalRunId,
+                    :externalJobId,
                     :workflowName,
+                    :jobName,
                     :status,
                     :startedAt,
                     :completedAt,
@@ -329,21 +308,27 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     COALESCE(:createdAt, now()),
                     COALESCE(:updatedAt, now())
                 )
-                ON CONFLICT (ci_provider, repository_id, external_run_id)
+                ON CONFLICT (ci_provider, repository_id, external_run_id, external_job_id)
                 DO UPDATE SET
                     project_id = EXCLUDED.project_id,
                     ticket_id = EXCLUDED.ticket_id,
                     pull_request_id = EXCLUDED.pull_request_id,
                     connector_run_id = EXCLUDED.connector_run_id,
+                    ci_provider = EXCLUDED.ci_provider,
+                    external_ci_run_id = EXCLUDED.external_ci_run_id,
+                    external_run_id = EXCLUDED.external_run_id,
+                    external_job_id = EXCLUDED.external_job_id,
                     workflow_name = EXCLUDED.workflow_name,
-                    ci_url = COALESCE(EXCLUDED.ci_url, tbl_fact_ci_run.ci_url),
-                    started_at = LEAST(tbl_fact_ci_run.started_at, EXCLUDED.started_at),
+                    job_name = EXCLUDED.job_name,
+                    status = EXCLUDED.status,
+                    started_at = EXCLUDED.started_at,
+                    completed_at = EXCLUDED.completed_at,
+                    ci_url = EXCLUDED.ci_url,
                     updated_at = COALESCE(EXCLUDED.updated_at, now())
                 RETURNING ci_run_id
                 """,
                 paramsForCiRun(run),
                 UUID.class);
-        run.setId(actualId);
         return run;
     }
 
@@ -359,7 +344,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                     ci_provider = :ciProvider,
                     external_ci_run_id = :externalRunId,
                     external_run_id = :externalRunId,
+                    external_job_id = :externalJobId,
                     workflow_name = :workflowName,
+                    job_name = :jobName,
                     status = :status,
                     started_at = :startedAt,
                     completed_at = :completedAt,
@@ -461,7 +448,9 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                 .addValue("connectorRunId", run.getConnectorRunId())
                 .addValue("ciProvider", run.getCiProvider())
                 .addValue("externalRunId", run.getExternalRunId())
+                .addValue("externalJobId", run.getExternalJobId())
                 .addValue("workflowName", run.getWorkflowName())
+                .addValue("jobName", run.getJobName())
                 .addValue("status", run.getStatus())
                 .addValue("startedAt", run.getStartedAt())
                 .addValue("completedAt", run.getCompletedAt())
@@ -540,81 +529,14 @@ public class CiRunJdbcAdapter implements CiRunRepositoryPort {
                 rs.getObject("project_id", UUID.class),
                 rs.getString("ci_provider"),
                 rs.getString("workflow_name"),
+                rs.getString("job_name"),
                 rs.getString("external_run_id"),
+                rs.getString("external_job_id"),
                 rs.getString("ci_url"),
                 rs.getString("status"),
                 rs.getObject("started_at", OffsetDateTime.class),
                 rs.getObject("completed_at", OffsetDateTime.class),
                 rs.getObject("collected_at", OffsetDateTime.class)
         );
-    }
-
-    @Override
-    public CiJob upsertCiJob(CiJob job) {
-        UUID id = job.getId() == null ? UUID.randomUUID() : job.getId();
-        UUID actualId = jdbc.queryForObject("""
-                INSERT INTO tbl_fact_ci_job (
-                    ci_job_id, ci_run_id, external_job_id, job_name,
-                    status, started_at, finished_at
-                )
-                VALUES (
-                    :ciJobId, :ciRunId, :externalJobId, :jobName,
-                    CAST(:status AS run_status), :startedAt, :finishedAt
-                )
-                ON CONFLICT (ci_run_id, external_job_id)
-                DO UPDATE SET
-                    job_name       = EXCLUDED.job_name,
-                    status         = EXCLUDED.status,
-                    started_at     = EXCLUDED.started_at,
-                    finished_at    = EXCLUDED.finished_at
-                RETURNING ci_job_id
-                """,
-                new MapSqlParameterSource()
-                        .addValue("ciJobId", id)
-                        .addValue("ciRunId", job.getCiRunId())
-                        .addValue("externalJobId", job.getExternalJobId())
-                        .addValue("jobName", job.getJobName())
-                        .addValue("status", job.getStatus())
-                        .addValue("startedAt", job.getStartedAt())
-                        .addValue("finishedAt", job.getFinishedAt()),
-                UUID.class);
-        job.setId(actualId);
-        return job;
-    }
-
-    @Override
-    public String computeAggregateRunStatus(UUID ciRunId) {
-        if (ciRunId == null) {
-            return "UNKNOWN";
-        }
-        var rows = jdbc.query("""
-                SELECT
-                    CASE
-                        WHEN COUNT(*) = 0 THEN 'IN_PROGRESS'
-                        WHEN COUNT(*) FILTER (WHERE status::text IN ('FAILURE', 'FAILED')) > 0 THEN 'FAILURE'
-                        WHEN COUNT(*) FILTER (WHERE status::text NOT IN ('SUCCESS', 'SKIPPED')) > 0 THEN 'IN_PROGRESS'
-                        ELSE 'SUCCESS'
-                    END AS aggregate_status
-                FROM tbl_fact_ci_job
-                WHERE ci_run_id = :ciRunId
-                """,
-                new MapSqlParameterSource("ciRunId", ciRunId),
-                (rs, rowNum) -> rs.getString("aggregate_status"));
-        return rows.stream().findFirst().orElse("UNKNOWN");
-    }
-
-    @Override
-    public void updateCiRunStatus(UUID ciRunId, String status) {
-        if (ciRunId == null || status == null) {
-            return;
-        }
-        jdbc.update("""
-                UPDATE tbl_fact_ci_run
-                SET status = CAST(:status AS run_status), updated_at = now()
-                WHERE ci_run_id = :ciRunId
-                """,
-                new MapSqlParameterSource()
-                        .addValue("ciRunId", ciRunId)
-                        .addValue("status", status));
     }
 }

@@ -50,17 +50,17 @@ class ImplPlanParseServiceTest {
     void parse_success_persists_all_sections_and_allows_detail_lookup() {
         ParseResult result = service.parseAndStore(request(fullMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.SUCCESS, result.parseStatus());
         assertNotNull(result.snapshot());
-        assertTrue(result.fields().size() > 20);
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertEquals(14, result.fields().size());
+        assertTrue(result.fields().stream().allMatch(ParseField::presentFlag));
         assertEquals(1, repository.snapshotCount());
         assertTrue(service.latestSnapshot(ticketId, ParseMode.DRAFT).isPresent());
 
         UUID snapshotId = result.snapshot().artifactSnapshotId();
         ParseResult detail = service.detail(snapshotId).orElseThrow();
-        assertEquals(ParseStatus.NOT_FOUND, detail.parseStatus());
-        assertEquals(result.fields().size(), detail.fields().size());
+        assertEquals(ParseStatus.SUCCESS, detail.parseStatus());
+        assertEquals(14, detail.fields().size());
         assertEquals(result.sourceHash(), detail.sourceHash());
     }
 
@@ -68,18 +68,23 @@ class ImplPlanParseServiceTest {
     void parse_missing_section_returns_partial_and_records_missing_field() {
         ParseResult result = service.parseAndStore(request(missingMigrationMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
         assertNotNull(result.snapshot());
-        assertFalse(result.missingFields().isEmpty());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertTrue(result.missingFields().contains("migration_rollback_policy"));
+        assertTrue(result.fields().stream()
+                .anyMatch(field -> "migration_rollback_policy".equals(field.sectionKey())
+                        && !field.presentFlag()));
     }
 
     @Test
     void parse_duplicate_heading_returns_partial() {
         ParseResult result = service.parseAndStore(request(duplicateAlternativePlanMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(value -> value.contains("duplicate")));
+        assertTrue(result.fields().stream()
+                .anyMatch(field -> "alternative_plan".equals(field.sectionKey())
+                        && Boolean.FALSE.equals(field.validFlag())));
     }
 
     @Test
@@ -135,9 +140,7 @@ class ImplPlanParseServiceTest {
                 "impl-plan-parser",
                 "v1",
                 "trace-1",
-                "NOT_APPLICABLE",
-                null,
-                null
+                "NOT_APPLICABLE"
         );
     }
 
@@ -247,8 +250,6 @@ class ImplPlanParseServiceTest {
                     snapshot.requiredFieldsMissing(),
                     snapshot.parsedSummaryJson(),
                     snapshot.parserVersion(),
-                    null,
-                    null,
                     snapshot.collectedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC) : snapshot.collectedAt()
             );
             snapshotsByKey.put(key, saved);

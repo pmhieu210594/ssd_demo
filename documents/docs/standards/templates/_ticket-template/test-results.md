@@ -21,13 +21,13 @@
 
 | TC ID | test | result | note |
 |---|---|---|---|
-| TC-<TICKET>-1 |---|---|---|
+| AC-<TICKET>-1 |---|---|---|
 
 ## 5. List of Fails
 
 | TC ID | test | cause | action | status |
 |---|---|---|---|---|
-| TC-<TICKET>-1 |---|---|---|---|
+| AC-<TICKET>-1 |---|---|---|---|
 
 ## 6. Bugs Fixed
 
@@ -39,7 +39,6 @@
 ## 8. Test cannot be executed and reason
 
 | TC ID | reason | risk | alternative evidence |
-|---|---|---|---|---|
 | TC-<TICKET>-1 |---|---|---|
 
 ## 9. Remaining risk

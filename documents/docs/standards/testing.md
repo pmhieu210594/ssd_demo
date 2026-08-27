@@ -96,14 +96,6 @@ Do not add `allowedPackage` exceptions without explicit team review.
 
 ---
 
-## AC Closure / Release Gating (Confirmed — ADMIN-AUDIT-LOG 2026-07-10)
-
-- **UI-mount verification**: an AC that requires a visible UI element (e.g. summary cards, a filter bar) is not "Implemented" until the component is verified mounted on the page it was built for. A component that only passes in isolated unit tests but is never composed into the actual page does not satisfy the AC. Verify via a page-level render/composition test or a manual browser walkthrough, not the component's own unit test alone.
-- **DB-dependent AC tracking**: ACs that depend on DB-level enforcement (triggers, FKs, immutability constraints) and cannot be executed because no live DB harness is available must be explicitly tracked as "reviewed, not executed" in every phase's report — not left implicit until the final report.
-- **PASS scope must state what it covers**: when a ticket has both an automated-suite round and a separate black-box case list, a "PASS" on the automated suite is not the same gate as black-box case completion. State which round a PASS covers; do not let an unscoped PASS imply the other round is also done (see `FMI-DEV-DASH-002`, `failure-mode-index.md`).
-
----
-
 ## Frontend (Vitest / Playwright)
 
 > **Current state:** Testing infrastructure is installed but no test files exist yet.

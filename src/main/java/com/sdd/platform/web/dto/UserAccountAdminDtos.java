@@ -3,7 +3,6 @@ package com.sdd.platform.web.dto;
 import com.sdd.platform.application.usecase.common.PageResult;
 import com.sdd.platform.domain.model.RoleOption;
 import com.sdd.platform.domain.model.UserAccountAdminView;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -70,7 +69,6 @@ public final class UserAccountAdminDtos {
         }
     }
 
-    @NoXssFields(exclude = {"password", "confirmPassword"})
     public record CreateUserAccountRequest(
             String username,
             String fullname,
@@ -81,7 +79,6 @@ public final class UserAccountAdminDtos {
             Boolean isActive
     ) {}
 
-    @NoXssFields
     public record UpdateUserAccountRequest(
             String fullname,
             String email,

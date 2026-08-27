@@ -100,7 +100,6 @@
     <select id="findRoles" resultMap="roleOptionResultMap">
         SELECT role_id, role_name
         FROM tbl_dim_role
-        WHERE delete_flag = 0
         ORDER BY role_name ASC
     </select>
 

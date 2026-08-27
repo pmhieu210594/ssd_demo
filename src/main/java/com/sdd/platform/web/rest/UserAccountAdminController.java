@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.UserAccountAdminService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.UserAccountAdminDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,7 +50,7 @@ public class UserAccountAdminController {
 
     @PostMapping("/user-accounts")
     public ResponseEntity<UserAccountAdminDtos.UserAccountDto> create(
-            @Valid @RequestBody UserAccountAdminDtos.CreateUserAccountRequest request,
+            @RequestBody UserAccountAdminDtos.CreateUserAccountRequest request,
             @CurrentUser AppUser caller
     ) {
         var created = service.create(
@@ -70,7 +69,7 @@ public class UserAccountAdminController {
     @PutMapping("/user-accounts/{accountId}")
     public UserAccountAdminDtos.UserAccountDto update(
             @PathVariable UUID accountId,
-            @Valid @RequestBody UserAccountAdminDtos.UpdateUserAccountRequest request,
+            @RequestBody UserAccountAdminDtos.UpdateUserAccountRequest request,
             @CurrentUser AppUser caller
     ) {
         return UserAccountAdminDtos.UserAccountDto.from(service.update(

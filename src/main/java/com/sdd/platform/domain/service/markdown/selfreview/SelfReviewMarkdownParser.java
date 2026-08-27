@@ -1,5 +1,12 @@
 package com.sdd.platform.domain.service.markdown.selfreview;
 
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownDocument;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownIssue;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownPlaceholder;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownSection;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownTable;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -11,61 +18,54 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownDocument;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownIssue;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownPlaceholder;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownSection;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownTable;
-
 /**
  * Dedicated parser for {@code self-review.md}.
  *
  * The shared Markdown parsing work lives in {@link MarkdownParserCore}; this
- * parser specializes that output into the fixed 11-section self-review
- * envelope.
+ * parser specializes that output into the fixed 11-section self-review envelope.
  */
 public class SelfReviewMarkdownParser {
 
-    private static final Pattern SOURCE_PATH_PATTERN = Pattern
-            .compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/self-review\\.md$");
+    private static final Pattern SOURCE_PATH_PATTERN = Pattern.compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/self-review\\.md$");
     private static final Pattern TICKET_ID_PATTERN = Pattern.compile("^[A-Z0-9][A-Z0-9-]*$");
     private static final Pattern VERDICT_PATTERN = Pattern.compile("(?i)^(PASS|NEEDS_UPDATE|BLOCKED)$");
     private static final String DEFAULT_PARSE_MODE = "draft";
-    private static final String PARSER_VERSION = "markdown-core-v1+self-review-v2";
+    private static final String PARSER_VERSION = "markdown-core-v1+self-review-v1";
 
     private static final List<String> CANONICAL_SECTION_KEYS = List.of(
-            "TRẠNG_THÁI_HOÀN_THÀNH_AC",
-            "CÁC_HẠNG_MỤC_CHECKLIST_(TỪ_`REVIEW-CHECKLIST.MD`)",
-            "CÁC_LỆNH_ĐÃ_CHẠY",
-            "LINT",
-            "TYPE-CHECK",
-            "UNIT_TEST",
-            "BUILD",
-            "TỔNG_QUAN_DIFF",
-            "RỦI_RO_ĐÃ_BIẾT_CHƯA_BAO_PHỦ_CÔNG_VIỆC_CÒN_LẠI",
-            "KNOWN_RISKS",
-            "NOT_HANDLED_YET",
-            "REMAINING_ISSUES_NỢ_KỸ_THUẬT",
-            "OPEN_ISSUES_TỪ_IMPL-PLAN_VẪN_CÒN",
-            "CONFIRMATIONS_CUỐI_CÙNG"
-        );
+            "IMPLEMENTATION_SUMMARY",
+            "SPECIFICATION_AC_MATCHING",
+            "LIST_OF_CHANGED_FILES",
+            "RUN_COMMAND_AND_RESULTS",
+            "SELF_CHECK_USING_REVIEW_CHECKLIST",
+            "TEST_PLAN_CORRESPONDING_STATUS",
+            "BUGS_FOUND_AND_RESOLVED",
+            "UNPROCESSED_PENDING_ACCEPTED_RISK",
+            "AI_GENERATED_PREDICTIONS",
+            "ITEMS_REVIEWED_BY_HUMANS",
+            "FINAL_SELF_VERDICT"
+    );
 
     private static final Set<String> TABLE_SECTION_KEYS = Set.of(
-            "TRẠNG_THÁI_HOÀN_THÀNH_AC",
+            "SPECIFICATION_AC_MATCHING",
             "LIST_OF_CHANGED_FILES",
-            "CÁC_LỆNH_ĐÃ_CHẠY",
-            "CÁC_HẠNG_MỤC_CHECKLIST_(TỪ_`REVIEW-CHECKLIST.MD`)",
-            "TỔNG_QUAN_DIFF",
-            "CONFIRMATIONS_CUỐI_CÙNG",
-            "OPEN_ISSUES_TỪ_IMPL-PLAN_VẪN_CÒN",
-            "KNOWN_RISKS",
-            "NOT_HANDLED_YET",
-            "REMAINING_ISSUES_NỢ_KỸ_THUẬT");
+            "RUN_COMMAND_AND_RESULTS",
+            "SELF_CHECK_USING_REVIEW_CHECKLIST",
+            "BUGS_FOUND_AND_RESOLVED",
+            "UNPROCESSED_PENDING_ACCEPTED_RISK"
+    );
 
-    private static final Set<String> OPTIONAL_SECTION_KEYS = Set.of();
+    private static final Set<String> OPTIONAL_SECTION_KEYS = Set.of(
+            "AI_GENERATED_PREDICTIONS"
+    );
 
-    private static final Set<String> FREE_TEXT_SECTION_KEYS = Set.of();
+    private static final Set<String> FREE_TEXT_SECTION_KEYS = Set.of(
+            "IMPLEMENTATION_SUMMARY",
+            "TEST_PLAN_CORRESPONDING_STATUS",
+            "AI_GENERATED_PREDICTIONS",
+            "ITEMS_REVIEWED_BY_HUMANS",
+            "FINAL_SELF_VERDICT"
+    );
 
     private final MarkdownParserCore core;
 
@@ -122,8 +122,7 @@ public class SelfReviewMarkdownParser {
                 .filter(section -> section.level() >= 2)
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        List<String> requiredSectionsMissing = detectRequiredSectionsMissing(canonicalSections, normalizedTables,
-                warnings, sourcePath);
+        List<String> requiredSectionsMissing = detectRequiredSectionsMissing(canonicalSections, normalizedTables, warnings, sourcePath);
         String finalVerdict = extractFinalVerdict(canonicalSections, warnings, errors, sourcePath);
 
         if (!placeholders.isEmpty()) {
@@ -151,7 +150,8 @@ public class SelfReviewMarkdownParser {
                 warnings,
                 errors,
                 requiredSectionsMissing,
-                placeholders);
+                placeholders
+        );
 
         List<MarkdownSection> freeTextSections = canonicalSections.stream()
                 .filter(section -> FREE_TEXT_SECTION_KEYS.contains(section.canonicalKey()))
@@ -159,8 +159,6 @@ public class SelfReviewMarkdownParser {
         List<MarkdownTable> tableSections = normalizedTables.stream()
                 .filter(table -> TABLE_SECTION_KEYS.contains(table.sectionKey()))
                 .toList();
-
-        List<ParsedExceptionRecord> exceptionRecords = extractExceptionRecords(normalizedTables, warnings, sourcePath);
 
         return new ParsedArtifact(
                 sourcePath,
@@ -183,8 +181,8 @@ public class SelfReviewMarkdownParser {
                 document.normalizedContent(),
                 document.contentHash(),
                 PARSER_VERSION,
-                parsedSummary,
-                exceptionRecords);
+                parsedSummary
+        );
     }
 
     public boolean hasSection(ParsedArtifact parsed, String... aliases) {
@@ -193,8 +191,7 @@ public class SelfReviewMarkdownParser {
         }
         for (String alias : aliases) {
             String normalizedAlias = normalizeSectionAlias(alias);
-            if (parsed.sections().stream()
-                    .anyMatch(section -> section.canonicalKey().equalsIgnoreCase(normalizedAlias))) {
+            if (parsed.sections().stream().anyMatch(section -> section.canonicalKey().equalsIgnoreCase(normalizedAlias))) {
                 return true;
             }
         }
@@ -214,9 +211,9 @@ public class SelfReviewMarkdownParser {
     }
 
     private List<String> detectRequiredSectionsMissing(List<MarkdownSection> sections,
-            List<MarkdownTable> tables,
-            List<ParsingIssue> warnings,
-            String sourcePath) {
+                                                       List<MarkdownTable> tables,
+                                                       List<ParsingIssue> warnings,
+                                                       String sourcePath) {
         List<String> missing = new ArrayList<>();
         Set<String> presentSectionKeys = sections.stream()
                 .map(MarkdownSection::canonicalKey)
@@ -296,9 +293,9 @@ public class SelfReviewMarkdownParser {
     }
 
     private String extractFinalVerdict(List<MarkdownSection> sections,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors,
-            String sourcePath) {
+                                       List<ParsingIssue> warnings,
+                                       List<ParsingIssue> errors,
+                                       String sourcePath) {
         MarkdownSection verdictSection = sections.stream()
                 .filter(section -> "FINAL_SELF_VERDICT".equals(normalizeCanonicalSectionKey(section.canonicalKey())))
                 .findFirst()
@@ -324,7 +321,7 @@ public class SelfReviewMarkdownParser {
             if (candidate.startsWith("-")) {
                 candidate = candidate.substring(1).trim();
             }
-            if (candidate.startsWith("*")) {
+            if (candidate.startsWith("*") ) {
                 candidate = candidate.substring(1).trim();
             }
             Matcher matcher = VERDICT_PATTERN.matcher(candidate);
@@ -359,8 +356,8 @@ public class SelfReviewMarkdownParser {
     }
 
     private void checkSectionOrder(List<MarkdownSection> sections,
-            List<ParsingIssue> warnings,
-            String sourcePath) {
+                                   List<ParsingIssue> warnings,
+                                   String sourcePath) {
         List<String> actual = sections.stream()
                 .filter(section -> section.level() >= 2)
                 .map(section -> normalizeCanonicalSectionKey(section.canonicalKey()))
@@ -395,8 +392,8 @@ public class SelfReviewMarkdownParser {
     }
 
     private void checkNestedDepth(List<MarkdownSection> sections,
-            List<ParsingIssue> warnings,
-            String sourcePath) {
+                                  List<ParsingIssue> warnings,
+                                  String sourcePath) {
         for (MarkdownSection section : sections) {
             if (section.level() > 2) {
                 warnings.add(issue(
@@ -410,17 +407,17 @@ public class SelfReviewMarkdownParser {
     }
 
     private Map<String, Object> buildParsedSummary(String ticketId,
-            String parseMode,
-            String parseStatus,
-            String artifactStatus,
-            String contentHash,
-            List<MarkdownSection> sections,
-            List<MarkdownTable> tables,
-            String finalVerdict,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors,
-            List<String> requiredSectionsMissing,
-            List<MarkdownPlaceholder> placeholders) {
+                                                   String parseMode,
+                                                   String parseStatus,
+                                                   String artifactStatus,
+                                                   String contentHash,
+                                                   List<MarkdownSection> sections,
+                                                   List<MarkdownTable> tables,
+                                                   String finalVerdict,
+                                                   List<ParsingIssue> warnings,
+                                                   List<ParsingIssue> errors,
+                                                   List<String> requiredSectionsMissing,
+                                                   List<MarkdownPlaceholder> placeholders) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("ticket_id", ticketId);
         summary.put("parse_mode", parseMode);
@@ -430,8 +427,7 @@ public class SelfReviewMarkdownParser {
         summary.put("parser_version", PARSER_VERSION);
         summary.put("section_count", sections.size());
         summary.put("table_count", tables.size());
-        summary.put("free_text_section_count",
-                sections.stream().filter(section -> FREE_TEXT_SECTION_KEYS.contains(section.canonicalKey())).count());
+        summary.put("free_text_section_count", sections.stream().filter(section -> FREE_TEXT_SECTION_KEYS.contains(section.canonicalKey())).count());
         summary.put("warning_count", warnings.size());
         summary.put("error_count", errors.size());
         summary.put("placeholder_count", placeholders.size());
@@ -439,16 +435,14 @@ public class SelfReviewMarkdownParser {
         summary.put("has_missing_required_sections", !requiredSectionsMissing.isEmpty());
         summary.put("final_verdict", finalVerdict);
         summary.put("final_verdict_valid", finalVerdict != null);
-        summary.put("has_review_checklist", sections.stream().anyMatch(section -> "SELF_CHECK_USING_REVIEW_CHECKLIST"
-                .equals(normalizeCanonicalSectionKey(section.canonicalKey()))));
-        summary.put("has_human_review", sections.stream().anyMatch(
-                section -> "ITEMS_REVIEWED_BY_HUMANS".equals(normalizeCanonicalSectionKey(section.canonicalKey()))));
+        summary.put("has_review_checklist", sections.stream().anyMatch(section -> "SELF_CHECK_USING_REVIEW_CHECKLIST".equals(normalizeCanonicalSectionKey(section.canonicalKey()))));
+        summary.put("has_human_review", sections.stream().anyMatch(section -> "ITEMS_REVIEWED_BY_HUMANS".equals(normalizeCanonicalSectionKey(section.canonicalKey()))));
         return summary;
     }
 
     private String determineParseStatus(String parseMode,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors) {
+                                        List<ParsingIssue> warnings,
+                                        List<ParsingIssue> errors) {
         if (!errors.isEmpty()) {
             return "FAILED";
         }
@@ -459,16 +453,17 @@ public class SelfReviewMarkdownParser {
     }
 
     private String inferTicketId(Map<String, String> frontMatter,
-            Map<String, String> headerMetadata,
-            String sourcePath,
-            List<MarkdownSection> sections) {
+                                 Map<String, String> headerMetadata,
+                                 String sourcePath,
+                                 List<MarkdownSection> sections) {
         String candidate = firstNonBlank(
                 frontMatter.get("ticket_id"),
                 frontMatter.get("ticket-id"),
                 frontMatter.get("ticketid"),
                 headerMetadata.get("ticket_id"),
                 headerMetadata.get("ticket-id"),
-                headerMetadata.get("ticketid"));
+                headerMetadata.get("ticketid")
+        );
         if (candidate != null && isTicketId(candidate)) {
             return candidate;
         }
@@ -546,7 +541,8 @@ public class SelfReviewMarkdownParser {
                 section.level(),
                 section.body(),
                 section.startLine(),
-                section.endLine());
+                section.endLine()
+        );
     }
 
     private MarkdownTable normalizeTable(MarkdownTable table) {
@@ -558,7 +554,8 @@ public class SelfReviewMarkdownParser {
                 table.sectionTitle(),
                 table.headers(),
                 table.rows(),
-                table.startLine());
+                table.startLine()
+        );
     }
 
     private String normalizeCanonicalSectionKey(String key) {
@@ -627,116 +624,12 @@ public class SelfReviewMarkdownParser {
                 || trimmed.matches("^<[^>]*>$");
     }
 
-    private List<ParsedExceptionRecord> extractExceptionRecords(List<MarkdownTable> tables,
-            List<ParsingIssue> warnings,
-            String sourcePath) {
-        List<ParsedExceptionRecord> records = new ArrayList<>();
-        boolean sectionPresent = false;
-
-        for (MarkdownTable table : tables) {
-            if (!"EXCEPTION_RECORD".equals(normalizeCanonicalSectionKey(table.sectionKey()))) {
-                continue;
-            }
-            sectionPresent = true;
-            List<String> headers = table.headers();
-            int typeIdx = findHeaderIndex(headers, "exception type", "exception_type", "type");
-            int reasonIdx = findHeaderIndex(headers, "reason");
-            int altIdx = findHeaderIndex(headers, "alternative check", "alternative_check", "alternative");
-            int appIdx = findHeaderIndex(headers, "approved");
-            int roleIdx = findHeaderIndex(headers, "approved by role", "approved_by_role", "approved by", "role");
-            int expiryIdx = findHeaderIndex(headers, "expiry date", "expiry_date", "expiry");
-            int followIdx = findHeaderIndex(headers, "follow up status", "follow_up_status", "follow-up status",
-                    "follow up", "follow_up");
-            int statusIdx = findHeaderIndex(headers, "status");
-
-            for (List<String> row : table.rows()) {
-                String type = safeGet(row, typeIdx);
-                if (type == null || isBlankOrPlaceholderOnly(type)) {
-                    continue;
-                }
-                String reason = safeGet(row, reasonIdx);
-                String truncatedReason = reason != null && reason.length() > 1000
-                        ? reason.substring(0, 1000)
-                        : reason;
-                String followUp = safeGet(row, followIdx);
-                records.add(new ParsedExceptionRecord(
-                        type.trim(),
-                        reason != null && !isBlankOrPlaceholderOnly(reason),
-                        truncatedReason,
-                        safeGet(row, altIdx),
-                        isTruthy(safeGet(row, appIdx)),
-                        safeGet(row, roleIdx),
-                        safeGet(row, expiryIdx),
-                        (followUp != null && !followUp.isBlank()) ? followUp.trim() : "OPEN",
-                        (safeGet(row, statusIdx) != null && !safeGet(row, statusIdx).isBlank())
-                                ? safeGet(row, statusIdx).trim()
-                                : null,
-                        null));
-            }
-        }
-
-        if (sectionPresent && records.isEmpty()) {
-            warnings.add(issue(
-                    "exception_table_empty",
-                    "EXCEPTION_RECORD section present but contains no data rows",
-                    sourcePath,
-                    "EXCEPTION_RECORD",
-                    -1));
-        }
-        return records;
-    }
-
-    private int findHeaderIndex(List<String> headers, String... aliases) {
-        if (headers == null) {
-            return -1;
-        }
-        for (String alias : aliases) {
-            String normalizedAlias = alias.trim().toLowerCase(Locale.ROOT);
-            for (int i = 0; i < headers.size(); i++) {
-                String h = headers.get(i);
-                if (h != null && h.trim().toLowerCase(Locale.ROOT).equals(normalizedAlias)) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static String safeGet(List<String> row, int idx) {
-        if (row == null || idx < 0 || idx >= row.size()) {
-            return null;
-        }
-        String val = row.get(idx);
-        return (val == null || val.isBlank()) ? null : val.trim();
-    }
-
-    private static boolean isTruthy(String value) {
-        if (value == null) {
-            return false;
-        }
-        String v = value.trim().toLowerCase(Locale.ROOT);
-        return "yes".equals(v) || "true".equals(v) || "y".equals(v) || "1".equals(v);
-    }
-
     private ParsingIssue issue(String code,
-            String message,
-            String sourcePath,
-            String sectionKey,
-            int line) {
+                               String message,
+                               String sourcePath,
+                               String sectionKey,
+                               int line) {
         return new ParsingIssue(code, "warning", message, sourcePath, sectionKey, line);
-    }
-
-    public record ParsedExceptionRecord(
-            String exceptionType,
-            boolean reasonPresent,
-            String reason,
-            String alternativeCheck,
-            boolean approved,
-            String approvedByRoleName,
-            String expiryDate,
-            String followUpStatus,
-            String status,
-            String sourceSection) {
     }
 
     public record ParsingIssue(
@@ -745,8 +638,8 @@ public class SelfReviewMarkdownParser {
             String message,
             String sourcePath,
             String sectionKey,
-            int line) {
-    }
+            int line
+    ) {}
 
     public record ParsedArtifact(
             String sourcePath,
@@ -769,16 +662,15 @@ public class SelfReviewMarkdownParser {
             String normalizedContent,
             String contentHash,
             String parserVersion,
-            Map<String, Object> parsedSummary,
-            List<ParsedExceptionRecord> exceptionRecords) {
+            Map<String, Object> parsedSummary
+    ) {
         public boolean containsAnywhere(String needle) {
             if (needle == null || needle.isBlank()) {
                 return false;
             }
             String low = needle.toLowerCase(Locale.ROOT);
             return sections.stream().anyMatch(v -> v.body() != null && v.body().toLowerCase(Locale.ROOT).contains(low))
-                    || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream)
-                            .anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
+                    || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream).anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
         }
     }
 }

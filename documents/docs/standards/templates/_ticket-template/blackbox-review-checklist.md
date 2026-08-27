@@ -9,8 +9,8 @@
 
 ## How to use
 
-- Each reviewer marks PASS / FAIL / SKIP (with justification).
-- Any FAIL P0 item blocks release.
+- Each reviewer marks ✅ pass / ❌ fail / ⏭ skip (with justification).
+- Any ❌ fail P0 item blocks release.
 - P1/P2 gaps must have a documented follow-up ticket or risk acceptance note.
 
 ---

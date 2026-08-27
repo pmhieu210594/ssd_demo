@@ -5,7 +5,6 @@ import com.sdd.platform.domain.model.Team;
 import com.sdd.platform.domain.model.TeamMember;
 import com.sdd.platform.domain.model.TeamMemberOption;
 import com.sdd.platform.domain.model.TeamRoleOption;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -146,7 +145,6 @@ public final class TeamDtos {
         }
     }
 
-    @NoXssFields
     public record CreateTeamRequest(
             String teamCode,
             String teamName,
@@ -154,7 +152,6 @@ public final class TeamDtos {
     ) {
     }
 
-    @NoXssFields
     public record UpdateTeamRequest(
             String teamCode,
             String teamName,

@@ -13,7 +13,6 @@
         <result property="passwordAlgo" column="password_algo"/>
         <result property="active" column="is_active"/>
         <result property="roleName" column="role_name"/>
-        <result property="roleDeleteFlag" column="role_delete_flag"/>
     </resultMap>
 
     <select id="findByUsername" resultMap="AuthUserAccountResultMap">
@@ -26,8 +25,7 @@
             a.password_hash,
             a.password_algo,
             a.is_active,
-            r.role_name,
-            r.delete_flag AS role_delete_flag
+            r.role_name
         FROM tbl_auth_user_account a
         LEFT JOIN tbl_dim_member_pseudonym m ON m.member_key = a.member_key
         LEFT JOIN tbl_dim_role r ON r.role_id = m.role_id

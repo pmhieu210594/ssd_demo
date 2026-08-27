@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.LineageEntry;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
-import com.sdd.platform.application.usecase.quality.ScoreThresholdConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.RowMapper;
@@ -33,8 +32,7 @@ class EvidenceQualityScoreRepositoryAdapterTest {
     void save_persists_metric_value_score_row_and_lineage_with_trimmed_actor() {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper,
-                mock(ScoreThresholdConfigService.class));
+        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper);
 
         UUID metricId = UUID.fromString("00000000-0000-0000-0000-00000000f101");
         UUID ticketId = UUID.fromString("00000000-0000-0000-0000-00000000f102");
@@ -54,6 +52,7 @@ class EvidenceQualityScoreRepositoryAdapterTest {
                 metricValueId,
                 ticketId,
                 new BigDecimal("86.50"),
+                "Good",
                 List.of(new ScoreCriterion(
                         "spec_pack_ac_numbering",
                         "spec-pack.md exists and has numbered ACs",
@@ -114,8 +113,7 @@ class EvidenceQualityScoreRepositoryAdapterTest {
     void loadArtifactSignal_prefers_latest_snapshot_by_timestamp_not_summary_presence() throws Exception {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper,
-                mock(ScoreThresholdConfigService.class));
+        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper);
 
         when(jdbc.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
 
@@ -142,8 +140,7 @@ class EvidenceQualityScoreRepositoryAdapterTest {
     void loadTestSignal_ignores_planned_coverage_rows_when_counting_executed_coverage() throws Exception {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper();
-        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper,
-                mock(ScoreThresholdConfigService.class));
+        EvidenceQualityScoreRepositoryAdapter adapter = new EvidenceQualityScoreRepositoryAdapter(jdbc, objectMapper);
 
         when(jdbc.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class))).thenReturn(List.of());
 
@@ -156,11 +153,7 @@ class EvidenceQualityScoreRepositoryAdapterTest {
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
         verify(jdbc).query(sqlCaptor.capture(), any(MapSqlParameterSource.class), any(RowMapper.class));
         String sql = sqlCaptor.getValue();
-        assertEquals(true, sql.contains("latest_test_case"));
-        assertEquals(true, sql.contains("FROM tbl_fact_test_case tc"));
-        assertEquals(true, sql.contains("JOIN latest_test_run l ON l.test_run_id = tc.test_run_id"));
-        assertEquals(true, sql.contains("tc.status::text = 'FAILED'"));
-        assertEquals(true, sql.contains("tc.status::text <> 'FAILED'"));
-        assertEquals(true, sql.contains("FROM tbl_fact_ac_test_coverage ac"));
+        assertEquals(true, sql.contains("coverage_status"));
+        assertEquals(true, sql.contains("<> 'PLANNED'"));
     }
 }

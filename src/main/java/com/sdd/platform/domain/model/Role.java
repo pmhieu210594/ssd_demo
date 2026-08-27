@@ -24,14 +24,8 @@ public class Role {
     private OffsetDateTime updatedAt;
     private String updatedBy;
     private int deleteFlag;
-    private RoleStatus status;
 
     public boolean isDeleted() {
-        return deleteFlag == 1 || status == RoleStatus.DELETED;
-    }
-
-    public enum RoleStatus {
-        ACTIVE,
-        DELETED
+        return deleteFlag == 1;
     }
 }

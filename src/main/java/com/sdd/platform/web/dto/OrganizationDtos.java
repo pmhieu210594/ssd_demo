@@ -2,7 +2,6 @@ package com.sdd.platform.web.dto;
 
 import com.sdd.platform.application.usecase.common.PageResult;
 import com.sdd.platform.domain.model.Organization;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -61,7 +60,6 @@ public final class OrganizationDtos {
         }
     }
 
-    @NoXssFields
     public record CreateOrganizationRequest(
             String organizationCode,
             String organizationName,
@@ -69,7 +67,6 @@ public final class OrganizationDtos {
     ) {
     }
 
-    @NoXssFields
     public record UpdateOrganizationRequest(
             String organizationCode,
             String organizationName,

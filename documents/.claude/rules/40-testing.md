@@ -9,10 +9,6 @@
 - Web layer tests use `@WebMvcTest` slice (Spring context partial); not full `@SpringBootTest`
 - No production DB in unit tests; integration tests with real DB are tracked separately
 
-## AC Closure
-
-- An AC that requires a visible UI element is not "Implemented" until the component is verified mounted on its composing page — an isolated component unit test does not satisfy the AC.
-
 ## Frontend (Vitest / Playwright)
 
 - Unit/component tests: Vitest + Testing Library (`*.test.ts` alongside source or in `__tests__/`)

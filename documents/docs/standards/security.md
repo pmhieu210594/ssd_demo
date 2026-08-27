@@ -70,7 +70,8 @@ All error responses use `ErrorResponse`. Stack traces are never sent to the clie
 record ErrorResponse(
     OffsetDateTime timestamp,   // OffsetDateTime — NOT Instant (corrected 2026-06-08)
     int status,
-    String error,               // internal machine-readable code, e.g. "NOT_FOUND", "VALIDATION_ERROR" — NOT an HTTP status phrase; there is no separate `errorCode` field (corrected 2026-08-20, source: `web/exception/ErrorResponse.java`, see AI-REVIEW-KPI-IMPROVEMENT/open-issues.md)
+    String error,               // HTTP status name, e.g. "Not Found"
+    String errorCode,           // internal code, e.g. "NOT_FOUND", "VALIDATION_ERROR"
     String message,             // human-readable, safe to display
     String traceId              // from MDC — use this to find the server log
 ) {}
@@ -104,14 +105,6 @@ Any API response that exposes a ticket owner, author, or assignee field **must**
 - Wrong: `s.updated_by AS owner_display` (raw user identifier — may be an email or username)
 
 Add a unit test asserting that `ownerDisplay` in the response does not match an email pattern (`*@*.*`). This applies to all snapshot queries, report views, and any read-model that surfaces a person reference.
-
----
-
-## Audit / Log Payload Masking (Confirmed — ADMIN-AUDIT-LOG 2026-07-10)
-
-When persisting a before/after diff or request payload into an audit or log table, mask sensitive fields with a **whitelist-drop** approach rather than a value-level regex redact: enumerate the field-name patterns to drop entirely (`password`, `token`, `secret`, `apiKey`, `credential`, `*hash`) and omit them from the stored JSON rather than replacing the value with a placeholder. This keeps the audited object's other fields verifiable while guaranteeing the sensitive field never reaches storage. Add a unit test asserting the masked field is absent from the persisted JSON (not just replaced).
-
-**Exception message sanitization** is a related but distinct concern: truncating an exception message by length does **not** prevent a secret-bearing substring from leaking into a log/audit field. Redact known secret-pattern substrings (`password`, `token`, `secret`, `apiKey`, `credential`) before applying a length cap. See `.claude/rules/30-security.md`.
 
 ---
 

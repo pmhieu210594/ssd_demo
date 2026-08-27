@@ -6,22 +6,25 @@ import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.A
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.CiSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.LineageEntry;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ReviewSignal;
+import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreBand;
+import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.SourceSnapshot;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TestSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TraceabilitySignal;
-import com.sdd.platform.application.usecase.quality.ScoreThresholdConfigService;
 import com.sdd.platform.infrastructure.persistence.mapper.EvidenceQualityScoreMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Locale;
 import java.util.UUID;
@@ -34,13 +37,10 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
 
     private final NamedParameterJdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
-    private final ScoreThresholdConfigService scoreThresholdConfigService;
 
-    public EvidenceQualityScoreRepositoryAdapter(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper,
-            ScoreThresholdConfigService scoreThresholdConfigService) {
+    public EvidenceQualityScoreRepositoryAdapter(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
-        this.scoreThresholdConfigService = scoreThresholdConfigService;
     }
 
     @Override
@@ -52,26 +52,18 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
         TicketIdentity identity = loadTicketIdentity(ticketId);
         UUID repositoryId = resolveRepositoryId(ticketId).orElse(identity.repositoryId());
         ArtifactSignal specPack = loadArtifactSignal(ticketId, "SPEC_PACK",
-                List.of("SCOPE", "SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE", "OPEN_ISSUES", "SECURITY_PRIVACY_IMPACT",
-                        "OPERATION_MAINTENANCE_IMPACT"));
+                List.of("SCOPE", "SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE", "OPEN_ISSUES", "SECURITY_PRIVACY_IMPACT", "OPERATION_MAINTENANCE_IMPACT"));
         ArtifactSignal implPlan = loadArtifactSignal(ticketId, "IMPL_PLAN",
-                List.of("IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY",
-                        "CORRESPONDING_AC_TABLE", "STEP_IMPLEMENTATION"));
+                List.of("IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY", "CORRESPONDING_AC_TABLE", "STEP_IMPLEMENTATION"));
         ArtifactSignal reviewChecklist = loadArtifactSignal(ticketId, "REVIEW_CHECKLIST", List.of());
         ArtifactSignal selfReview = loadArtifactSignal(ticketId, "SELF_REVIEW",
-                List.of("RUN_COMMAND_AND_RESULTS", "SELF_CHECK_USING_REVIEW_CHECKLIST",
-                        "UNPROCESSED_PENDING_ACCEPTED_RISK", "ITEMS_REVIEWED_BY_HUMANS", "FINAL_SELF_VERDICT"));
+                List.of("RUN_COMMAND_AND_RESULTS", "SELF_CHECK_USING_REVIEW_CHECKLIST", "UNPROCESSED_PENDING_ACCEPTED_RISK", "ITEMS_REVIEWED_BY_HUMANS", "FINAL_SELF_VERDICT"));
         ArtifactSignal testPlan = loadArtifactSignal(ticketId, "TEST_PLAN",
                 List.of("AC_MATRIX_TEST_TYPE", "ADDITIONAL_TEST_THIS_TIME", "EXECUTION_COMMAND", "STOP_CONDITION"));
         ArtifactSignal testResults = loadArtifactSignal(ticketId, "TEST_RESULTS",
                 List.of("EXECUTION_ENVIRONMENT", "EXECUTED_COMMAND", "SUMMARY_OF_RESULTS", "FINAL_TEST_VERDICT"));
         ArtifactSignal blackboxTestcases = loadArtifactSignal(ticketId, "BLACKBOX_TESTCASES", List.of());
-        ArtifactSignal report = loadArtifactSignal(ticketId, "REPORT", List.of(
-                "EDITED_SUMMARY",
-                "SCOPE_OF_INFLUENCE",
-                "REVIEW_RESULTS",
-                "TEST_RESULTS",
-                "OPEN_ISSUES"));
+        ArtifactSignal report = loadArtifactSignal(ticketId, "REPORT", List.of());
         ReviewSignal review = loadReviewSignal(ticketId);
         CiSignal ci = loadCiSignal(ticketId);
         TestSignal test = loadTestSignal(ticketId);
@@ -94,77 +86,78 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 ci,
                 test,
                 traceability,
-                latestSourceAt);
+                latestSourceAt
+        );
     }
 
     @Override
     public Optional<ScoreResult> findLatest(UUID ticketId) {
-        List<ScoreResult> rows = jdbc.query(
-                """
-                        SELECT
-                            sq.evidence_quality_score_id,
-                            sq.metric_value_id,
-                            sq.ticket_id,
-                            sq.score,
-                            to_jsonb(sq.missing_items)::text AS missing_items,
-                            mv.breakdown::text AS breakdown,
-                            mv.metric_code,
-                            mv.definition_version,
-                            sq.score_rule_version,
-                            sq.spec_score,
-                            sq.plan_score,
-                            sq.review_score,
-                            sq.self_review_score,
-                            sq.test_score,
-                            sq.ci_score,
-                            sq.blackbox_score,
-                            sq.report_score,
-                            to_jsonb(COALESCE(lineage.lineage_rows, '[]'::jsonb))::text AS lineage,
-                            sq.calculated_at,
-                            CASE
-                                WHEN sq.score_rule_version IS NULL THEN 'partial'
-                                WHEN sq.score_rule_version = :ruleVersion
-                                     AND sq.calculated_at >= COALESCE(source.latest_source_at, sq.calculated_at)
-                                     AND COALESCE(jsonb_array_length(sq.missing_items), 0) = 0
-                                     THEN 'final'
-                                WHEN sq.calculated_at < COALESCE(source.latest_source_at, sq.calculated_at) THEN 'stale'
-                                ELSE 'partial'
-                            END AS snapshot_state,
-                            sq.created_at,
-                            sq.updated_at,
-                            sq.created_by,
-                            sq.updated_by
-                        FROM tbl_fact_evidence_quality_score sq
-                        LEFT JOIN tbl_fact_metric_value mv ON mv.metric_value_id = sq.metric_value_id
-                        LEFT JOIN LATERAL (
-                            SELECT jsonb_agg(
-                                jsonb_build_object(
-                                    'input_table', l.input_table,
-                                    'input_record_id', l.input_record_id,
-                                    'input_hash', l.input_hash,
-                                    'contribution_type', l.contribution_type
-                                )
-                            ) AS lineage_rows
-                            FROM tbl_fact_metric_input_lineage l
-                            WHERE l.metric_value_id = sq.metric_value_id
-                        ) lineage ON TRUE
-                        LEFT JOIN LATERAL (
-                            SELECT max(ts) AS latest_source_at
-                            FROM (
-                                SELECT max(a.collected_at) AS ts FROM tbl_fact_artifact_snapshot a WHERE a.ticket_id = sq.ticket_id
-                                UNION ALL SELECT max(r.collected_at) AS ts FROM tbl_fact_review r WHERE r.ticket_id = sq.ticket_id
-                                UNION ALL SELECT max(c.collected_at) AS ts FROM tbl_fact_ci_run c WHERE c.ticket_id = sq.ticket_id
-                                UNION ALL SELECT max(t.collected_at) AS ts FROM tbl_fact_test_run t WHERE t.ticket_id = sq.ticket_id
-                                UNION ALL SELECT max(e.generated_at) AS ts FROM tbl_fact_evidence_report e WHERE e.ticket_id = sq.ticket_id
-                            ) source_times
-                        ) source ON TRUE
-                        WHERE sq.ticket_id = :ticketId
-                          AND sq.score_rule_version = :ruleVersion
-                        ORDER BY sq.calculated_at DESC, sq.evidence_quality_score_id DESC
-                        LIMIT 1
-                        """,
+        List<ScoreResult> rows = jdbc.query("""
+                SELECT
+                    sq.evidence_quality_score_id,
+                    sq.metric_value_id,
+                    sq.ticket_id,
+                    sq.score,
+                    sq.score_band::text AS score_band,
+                    to_jsonb(sq.missing_items)::text AS missing_items,
+                    mv.breakdown::text AS breakdown,
+                    mv.metric_code,
+                    mv.definition_version,
+                    sq.score_rule_version,
+                    sq.spec_score,
+                    sq.plan_score,
+                    sq.review_score,
+                    sq.self_review_score,
+                    sq.test_score,
+                    sq.ci_score,
+                    sq.blackbox_score,
+                    sq.report_score,
+                    to_jsonb(COALESCE(lineage.lineage_rows, '[]'::jsonb))::text AS lineage,
+                    sq.calculated_at,
+                    CASE
+                        WHEN sq.score_rule_version IS NULL THEN 'partial'
+                        WHEN sq.score_rule_version = :ruleVersion
+                             AND sq.calculated_at >= COALESCE(source.latest_source_at, sq.calculated_at)
+                             AND COALESCE(jsonb_array_length(sq.missing_items), 0) = 0
+                             THEN 'final'
+                        WHEN sq.calculated_at < COALESCE(source.latest_source_at, sq.calculated_at) THEN 'stale'
+                        ELSE 'partial'
+                    END AS snapshot_state,
+                    sq.created_at,
+                    sq.updated_at,
+                    sq.created_by,
+                    sq.updated_by
+                FROM tbl_fact_evidence_quality_score sq
+                LEFT JOIN tbl_fact_metric_value mv ON mv.metric_value_id = sq.metric_value_id
+                LEFT JOIN LATERAL (
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'input_table', l.input_table,
+                            'input_record_id', l.input_record_id,
+                            'input_hash', l.input_hash,
+                            'contribution_type', l.contribution_type
+                        )
+                    ) AS lineage_rows
+                    FROM tbl_fact_metric_input_lineage l
+                    WHERE l.metric_value_id = sq.metric_value_id
+                ) lineage ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT max(ts) AS latest_source_at
+                    FROM (
+                        SELECT max(a.collected_at) AS ts FROM tbl_fact_artifact_snapshot a WHERE a.ticket_id = sq.ticket_id
+                        UNION ALL SELECT max(r.collected_at) AS ts FROM tbl_fact_review r WHERE r.ticket_id = sq.ticket_id
+                        UNION ALL SELECT max(c.collected_at) AS ts FROM tbl_fact_ci_run c WHERE c.ticket_id = sq.ticket_id
+                        UNION ALL SELECT max(t.collected_at) AS ts FROM tbl_fact_test_run t WHERE t.ticket_id = sq.ticket_id
+                        UNION ALL SELECT max(e.generated_at) AS ts FROM tbl_fact_evidence_report e WHERE e.ticket_id = sq.ticket_id
+                    ) source_times
+                ) source ON TRUE
+                WHERE sq.ticket_id = :ticketId
+                  AND sq.score_rule_version = :ruleVersion
+                ORDER BY sq.calculated_at DESC, sq.evidence_quality_score_id DESC
+                LIMIT 1
+                """,
                 new MapSqlParameterSource("ticketId", ticketId).addValue("ruleVersion", DEFAULT_RULE_VERSION),
-                EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper, scoreThresholdConfigService));
+                EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper));
         return rows.stream().findFirst();
     }
 
@@ -177,6 +170,7 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                     sq.metric_value_id,
                     sq.ticket_id,
                     sq.score,
+                    sq.score_band::text AS score_band,
                     to_jsonb(sq.missing_items)::text AS missing_items,
                     mv.breakdown::text AS breakdown,
                     mv.metric_code,
@@ -216,63 +210,60 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 LIMIT :limit
                 """,
                 new MapSqlParameterSource("ticketId", ticketId).addValue("limit", normalizedLimit),
-                EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper, scoreThresholdConfigService));
+                EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper));
     }
 
     @Override
     public ScoreResult save(ScoreResult result, String requestedBy) {
         String actor = normalizeActor(requestedBy);
         UUID metricValueId = result.metricValueId() != null ? result.metricValueId() : UUID.randomUUID();
-        UUID evidenceQualityScoreId = result.evidenceQualityScoreId() != null ? result.evidenceQualityScoreId()
-                : UUID.randomUUID();
+        UUID evidenceQualityScoreId = result.evidenceQualityScoreId() != null ? result.evidenceQualityScoreId() : UUID.randomUUID();
         UUID metricId = resolveMetricId(result.scoreRuleVersion());
         String breakdownJson = EvidenceQualityScoreMapper.toJson(objectMapper, result.breakdown());
         String lineageJson = EvidenceQualityScoreMapper.toJson(objectMapper, result.lineage());
         String missingJson = EvidenceQualityScoreMapper.toJson(objectMapper, result.missing());
 
-        jdbc.update(
-                """
-                        INSERT INTO tbl_fact_metric_value (
-                            metric_value_id, metric_id, metric_code, definition_version,
-                            project_id, repository_id, ticket_id, period_type, period_start, period_end,
-                            value, breakdown, calculated_at, created_at, created_by, updated_at, updated_by
-                        ) VALUES (
-                            :metricValueId, :metricId, :metricCode, :definitionVersion,
-                            :projectId, :repositoryId, :ticketId, :periodType, :periodStart, :periodEnd,
-                            :value, CAST(:breakdown AS jsonb), :calculatedAt, :createdAt, :createdBy, :updatedAt, :updatedBy
-                        )
-                        ON CONFLICT (metric_value_id) DO UPDATE SET
-                            metric_id = EXCLUDED.metric_id,
-                            metric_code = EXCLUDED.metric_code,
-                            definition_version = EXCLUDED.definition_version,
-                            project_id = EXCLUDED.project_id,
-                            repository_id = EXCLUDED.repository_id,
-                            ticket_id = EXCLUDED.ticket_id,
-                            period_type = EXCLUDED.period_type,
-                            period_start = EXCLUDED.period_start,
-                            period_end = EXCLUDED.period_end,
-                            value = EXCLUDED.value,
-                            breakdown = EXCLUDED.breakdown,
-                            calculated_at = EXCLUDED.calculated_at,
-                            updated_at = EXCLUDED.updated_at,
-                            updated_by = EXCLUDED.updated_by
-                        """,
+        jdbc.update("""
+                INSERT INTO tbl_fact_metric_value (
+                    metric_value_id, metric_id, metric_code, definition_version,
+                    project_id, repository_id, ticket_id, period_type, period_start, period_end,
+                    value, score_band, breakdown, calculated_at, created_at, created_by, updated_at, updated_by
+                ) VALUES (
+                    :metricValueId, :metricId, :metricCode, :definitionVersion,
+                    :projectId, :repositoryId, :ticketId, :periodType, :periodStart, :periodEnd,
+                    :value, CAST(:scoreBand AS score_band), CAST(:breakdown AS jsonb), :calculatedAt, :createdAt, :createdBy, :updatedAt, :updatedBy
+                )
+                ON CONFLICT (metric_value_id) DO UPDATE SET
+                    metric_id = EXCLUDED.metric_id,
+                    metric_code = EXCLUDED.metric_code,
+                    definition_version = EXCLUDED.definition_version,
+                    project_id = EXCLUDED.project_id,
+                    repository_id = EXCLUDED.repository_id,
+                    ticket_id = EXCLUDED.ticket_id,
+                    period_type = EXCLUDED.period_type,
+                    period_start = EXCLUDED.period_start,
+                    period_end = EXCLUDED.period_end,
+                    value = EXCLUDED.value,
+                    score_band = EXCLUDED.score_band,
+                    breakdown = EXCLUDED.breakdown,
+                    calculated_at = EXCLUDED.calculated_at,
+                    updated_at = EXCLUDED.updated_at,
+                    updated_by = EXCLUDED.updated_by
+                """,
                 scoreParams(result, metricValueId, metricId, breakdownJson, actor));
 
-        jdbc.update(
-                """
-                        INSERT INTO tbl_fact_evidence_quality_score (
-                            evidence_quality_score_id, ticket_id, metric_value_id, score, score_rule_version,
-                            spec_score, plan_score, review_score, self_review_score, test_score, ci_score, blackbox_score, report_score,
-                            missing_items, calculated_at, created_at, created_by, updated_at, updated_by
-                        ) VALUES (
-                            :evidenceQualityScoreId, :ticketId, :metricValueId, :score, :scoreRuleVersion,
-                            :specScore, :planScore, :reviewScore, :selfReviewScore, :testScore, :ciScore, :blackboxScore, :reportScore,
-                            CAST(:missingItems AS jsonb), :calculatedAt, :createdAt, :createdBy, :updatedAt, :updatedBy
-                        )
-                        """,
-                scoreParams(result.withIds(evidenceQualityScoreId, metricValueId), metricValueId, metricId,
-                        breakdownJson, actor)
+        jdbc.update("""
+                INSERT INTO tbl_fact_evidence_quality_score (
+                    evidence_quality_score_id, ticket_id, metric_value_id, score, score_band, score_rule_version,
+                    spec_score, plan_score, review_score, self_review_score, test_score, ci_score, blackbox_score, report_score,
+                    missing_items, calculated_at, created_at, created_by, updated_at, updated_by
+                ) VALUES (
+                    :evidenceQualityScoreId, :ticketId, :metricValueId, :score, CAST(:scoreBand AS score_band), :scoreRuleVersion,
+                    :specScore, :planScore, :reviewScore, :selfReviewScore, :testScore, :ciScore, :blackboxScore, :reportScore,
+                    CAST(:missingItems AS jsonb), :calculatedAt, :createdAt, :createdBy, :updatedAt, :updatedBy
+                )
+                """,
+                scoreParams(result.withIds(evidenceQualityScoreId, metricValueId), metricValueId, metricId, breakdownJson, actor)
                         .addValue("missingItems", missingJson));
 
         insertLineage(metricValueId, result.lineage(), actor);
@@ -305,13 +296,12 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
     }
 
     private MapSqlParameterSource scoreParams(ScoreResult result,
-            UUID metricValueId,
-            UUID metricId,
-            String breakdownJson,
-            String actor) {
+                                              UUID metricValueId,
+                                              UUID metricId,
+                                              String breakdownJson,
+                                              String actor) {
         return new MapSqlParameterSource()
-                .addValue("evidenceQualityScoreId",
-                        result.evidenceQualityScoreId() == null ? UUID.randomUUID() : result.evidenceQualityScoreId())
+                .addValue("evidenceQualityScoreId", result.evidenceQualityScoreId() == null ? UUID.randomUUID() : result.evidenceQualityScoreId())
                 .addValue("metricValueId", metricValueId)
                 .addValue("metricId", metricId)
                 .addValue("metricCode", "EVIDENCE_QUALITY_SCORE")
@@ -325,6 +315,7 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 .addValue("periodEnd", java.time.LocalDate.now())
                 .addValue("value", result.score())
                 .addValue("score", result.score())
+                .addValue("scoreBand", result.band() == null ? null : result.band().toUpperCase(Locale.ROOT))
                 .addValue("breakdown", breakdownJson)
                 .addValue("calculatedAt", result.calculatedAt())
                 .addValue("createdAt", result.calculatedAt())
@@ -352,51 +343,48 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 """,
                 new MapSqlParameterSource()
                         .addValue("metricCode", "EVIDENCE_QUALITY_SCORE")
-                        .addValue("version",
-                                ruleVersion == null || ruleVersion.isBlank() ? DEFAULT_RULE_VERSION : ruleVersion),
+                        .addValue("version", ruleVersion == null || ruleVersion.isBlank() ? DEFAULT_RULE_VERSION : ruleVersion),
                 (rs, rowNum) -> rs.getObject("metric_id", UUID.class));
         if (metricIds.isEmpty()) {
-            throw new IllegalStateException(
-                    "Metric definition EVIDENCE_QUALITY_SCORE not configured for version " + ruleVersion);
+            throw new IllegalStateException("Metric definition EVIDENCE_QUALITY_SCORE not configured for version " + ruleVersion);
         }
         return metricIds.getFirst();
     }
 
     private ArtifactSignal loadArtifactSignal(UUID ticketId, String artifactTypeCode, List<String> sectionKeys) {
-        List<ArtifactSignal> rows = jdbc.query(
-                """
-                        SELECT
-                            s.artifact_snapshot_id,
-                            t.artifact_type_code,
-                            t.default_file_name,
-                            s.exists_flag,
-                            COALESCE(s.template_empty_flag, FALSE) AS template_empty_flag,
-                            COALESCE(s.parsed_summary->>'parseStatus', s.parsed_summary->>'parse_status', '') AS parse_status,
-                            COALESCE(s.parser_version, s.parsed_summary->>'parser_version', '') AS parser_version,
-                            s.collected_at,
-                            COALESCE((s.parsed_summary->>'section_count')::int, 0) AS section_count,
-                            COALESCE((s.parsed_summary->>'table_count')::int, 0) AS table_count,
-                            COALESCE((s.parsed_summary->>'ac_count')::int, 0) AS ac_count,
-                            COALESCE((s.parsed_summary->>'ac_valid_format_count')::int, 0) AS ac_valid_format_count,
-                            COALESCE(s.parsed_summary->>'final_verdict', s.parsed_summary->>'finalVerdict', '') AS final_verdict,
-                            COALESCE(to_jsonb(s.required_fields_missing), '[]'::jsonb)::text AS required_fields_missing,
-                            COALESCE(to_jsonb(ARRAY(
-                                SELECT p.parse_warning
-                                FROM tbl_fact_artifact_parsed_section p
-                                WHERE p.artifact_snapshot_id = s.artifact_snapshot_id
-                                  AND p.parse_warning IS NOT NULL
-                            )), '[]'::jsonb)::text AS parse_errors,
-                            COALESCE(to_jsonb(s.parsed_summary), '{}'::jsonb)::text AS parsed_summary,
-                            s.content_hash
-                        FROM tbl_fact_artifact_snapshot s
-                        JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
-                        WHERE s.ticket_id = :ticketId
-                          AND t.artifact_type_code = :artifactTypeCode
-                        ORDER BY
-                            s.collected_at DESC,
-                            s.created_at DESC
-                        LIMIT 1
-                        """,
+        List<ArtifactSignal> rows = jdbc.query("""
+                SELECT
+                    s.artifact_snapshot_id,
+                    t.artifact_type_code,
+                    t.default_file_name,
+                    s.exists_flag,
+                    COALESCE(s.template_empty_flag, FALSE) AS template_empty_flag,
+                    COALESCE(s.parsed_summary->>'parseStatus', s.parsed_summary->>'parse_status', '') AS parse_status,
+                    COALESCE(s.parser_version, s.parsed_summary->>'parser_version', '') AS parser_version,
+                    s.collected_at,
+                    COALESCE((s.parsed_summary->>'section_count')::int, 0) AS section_count,
+                    COALESCE((s.parsed_summary->>'table_count')::int, 0) AS table_count,
+                    COALESCE((s.parsed_summary->>'ac_count')::int, 0) AS ac_count,
+                    COALESCE((s.parsed_summary->>'ac_valid_format_count')::int, 0) AS ac_valid_format_count,
+                    COALESCE(s.parsed_summary->>'final_verdict', s.parsed_summary->>'finalVerdict', '') AS final_verdict,
+                    COALESCE(to_jsonb(s.required_fields_missing), '[]'::jsonb)::text AS required_fields_missing,
+                    COALESCE(to_jsonb(ARRAY(
+                        SELECT p.parse_warning
+                        FROM tbl_fact_artifact_parsed_section p
+                        WHERE p.artifact_snapshot_id = s.artifact_snapshot_id
+                          AND p.parse_warning IS NOT NULL
+                    )), '[]'::jsonb)::text AS parse_errors,
+                    COALESCE(to_jsonb(s.parsed_summary), '{}'::jsonb)::text AS parsed_summary,
+                    s.content_hash
+                FROM tbl_fact_artifact_snapshot s
+                JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
+                WHERE s.ticket_id = :ticketId
+                  AND t.artifact_type_code = :artifactTypeCode
+                ORDER BY
+                    s.collected_at DESC,
+                    s.created_at DESC
+                LIMIT 1
+                """,
                 new MapSqlParameterSource()
                         .addValue("ticketId", ticketId)
                         .addValue("artifactTypeCode", artifactTypeCode),
@@ -426,7 +414,8 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                     signal.parseErrors(),
                     Collections.emptyMap(),
                     signal.parsedSummary(),
-                    signal.contentHash());
+                    signal.contentHash()
+            );
         }
         Map<String, Boolean> presence = loadSectionPresence(signal.artifactSnapshotId(), sectionKeys);
         return new ArtifactSignal(
@@ -447,19 +436,19 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 signal.parseErrors(),
                 presence,
                 signal.parsedSummary(),
-                signal.contentHash());
+                signal.contentHash()
+        );
     }
 
     private AcceptanceCriteriaStats loadAcceptanceCriteriaStats(UUID ticketId) {
-        List<AcceptanceCriteriaStats> rows = jdbc.query(
-                """
-                        SELECT
-                            COALESCE(count(*), 0) AS ac_count,
-                            COALESCE(sum(CASE WHEN COALESCE(ambiguous_flag, FALSE) = FALSE THEN 1 ELSE 0 END), 0) AS ac_valid_format_count
-                        FROM tbl_fact_acceptance_criteria
-                        WHERE ticket_id = :ticketId
-                          AND status = 'ACTIVE'
-                        """,
+        List<AcceptanceCriteriaStats> rows = jdbc.query("""
+                SELECT
+                    COALESCE(count(*), 0) AS ac_count,
+                    COALESCE(sum(CASE WHEN COALESCE(ambiguous_flag, FALSE) = FALSE THEN 1 ELSE 0 END), 0) AS ac_valid_format_count
+                FROM tbl_fact_acceptance_criteria
+                WHERE ticket_id = :ticketId
+                  AND status = 'ACTIVE'
+                """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new AcceptanceCriteriaStats(
                         rs.getInt("ac_count"),
@@ -518,7 +507,8 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                         rs.getInt("comment_count"),
                         rs.getInt("finding_count"),
                         rs.getObject("collected_at", OffsetDateTime.class),
-                        List.of("tbl_fact_review:" + rs.getObject("review_id", UUID.class))));
+                        List.of("tbl_fact_review:" + rs.getObject("review_id", UUID.class))
+                ));
         if (rows.isEmpty()) {
             return new ReviewSignal(null, false, null, 0, 0, null, List.of());
         }
@@ -526,18 +516,18 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
     }
 
     private CiSignal loadCiSignal(UUID ticketId) {
-        // Step 1: Get the latest CI run for this ticket
-        List<CiSignal> ciRuns = jdbc.query("""
+        List<CiSignal> rows = jdbc.query("""
                 SELECT
                     c.ci_run_id,
+                    TRUE AS present_flag,
                     COALESCE(c.status::text, '') AS status,
                     COALESCE(c.ci_url, '') AS ci_url,
                     COALESCE(c.external_run_id, c.external_ci_run_id, '') AS external_run_id,
+                    COALESCE(c.external_job_id, '') AS external_job_id,
                     COALESCE(c.updated_at, c.created_at, c.collected_at, now()) AS collected_at
                 FROM tbl_fact_ci_run c
                 WHERE c.ticket_id = :ticketId
-                ORDER BY c.started_at DESC NULLS LAST, c.ci_run_id DESC
-                LIMIT 1
+                ORDER BY COALESCE(c.updated_at, c.created_at, c.collected_at, now()) DESC, c.ci_run_id DESC
                 """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new CiSignal(
@@ -546,98 +536,85 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                         rs.getString("status"),
                         rs.getString("ci_url"),
                         rs.getString("external_run_id"),
-                        0, 0,
+                        rs.getString("external_job_id"),
+                        1,
+                        notBlank(rs.getString("ci_url")) || notBlank(rs.getString("external_run_id")) ? 1 : 0,
                         rs.getObject("collected_at", OffsetDateTime.class),
-                        List.of("tbl_fact_ci_run:" + rs.getObject("ci_run_id", UUID.class))));
-
-        if (ciRuns.isEmpty()) {
-            return new CiSignal(null, false, null, null, null, 0, 0, null, List.of());
+                        List.of("tbl_fact_ci_run:" + rs.getObject("ci_run_id", UUID.class))
+                ));
+        if (rows.isEmpty()) {
+            return new CiSignal(null, false, null, null, null, null, 0, 0, null, List.of());
         }
-
-        CiSignal latestRun = ciRuns.getFirst();
-
-        // Step 2: Get job statuses for this run
-        List<String> jobStatuses = jdbc.query("""
-                SELECT status::text AS status
-                FROM tbl_fact_ci_job
-                WHERE ci_run_id = :ciRunId
-                """,
-                new MapSqlParameterSource("ciRunId", latestRun.ciRunId()),
-                (rs, rowNum) -> rs.getString("status"));
-
-        // Step 3: Compute job counts
-        // Fallback to run-level status if no jobs recorded yet
-        int jobCount = jobStatuses.isEmpty() ? 1 : jobStatuses.size();
-        int linkedJobCount;
-        if (jobStatuses.isEmpty()) {
-            linkedJobCount = "SUCCESS".equalsIgnoreCase(latestRun.status())
-                    || "SKIPPED".equalsIgnoreCase(latestRun.status()) ? 1 : 0;
-        } else {
-            linkedJobCount = (int) jobStatuses.stream()
-                    .filter(s -> "SUCCESS".equalsIgnoreCase(s) || "SKIPPED".equalsIgnoreCase(s))
-                    .count();
-        }
-
+        CiSignal newest = rows.getFirst();
+        int jobCount = rows.size();
+        int linkedJobCount = (int) rows.stream()
+                .filter(row -> !isFailedJob(row.status()))
+                .filter(row -> hasAnyLink(row))
+                .count();
+        List<String> sourceRefs = rows.stream()
+                .flatMap(row -> row.sourceRefs().stream())
+                .distinct()
+                .toList();
         return new CiSignal(
-                latestRun.ciRunId(),
+                newest.ciRunId(),
                 true,
-                latestRun.status(),
-                latestRun.ciUrl(),
-                latestRun.externalRunId(),
+                newest.status(),
+                newest.ciUrl(),
+                newest.externalRunId(),
+                newest.externalJobId(),
                 jobCount,
                 linkedJobCount,
-                latestRun.collectedAt(),
-                latestRun.sourceRefs());
+                newest.collectedAt(),
+                sourceRefs
+        );
     }
 
     private TestSignal loadTestSignal(UUID ticketId) {
-        List<TestSignal> rows = jdbc.query(
-                """
-                        WITH latest_test_run AS (
-                            SELECT
-                                tr.test_run_id,
-                                tr.status,
-                                tr.collected_at
-                            FROM tbl_fact_test_run tr
-                            WHERE tr.ticket_id = :ticketId
-                            ORDER BY COALESCE(tr.collected_at, now()) DESC, tr.test_run_id DESC
-                            LIMIT 1
-                        ),
-                        latest_test_case AS (
-                            SELECT
-                                tc.test_case_id,
-                                tc.status
-                            FROM tbl_fact_test_case tc
-                            JOIN latest_test_run l ON l.test_run_id = tc.test_run_id
-                        )
-                        SELECT
-                            COALESCE((SELECT count(*) FROM latest_test_run), 0) AS test_run_count,
-                            COALESCE((SELECT count(*) FROM latest_test_case), 0) AS test_case_count,
-                            COALESCE((SELECT count(*) FROM latest_test_case tc WHERE tc.status::text = 'SUCCESS'), 0) AS passed_count,
-                            COALESCE((SELECT count(*) FROM latest_test_case tc WHERE tc.status::text = 'FAILED'), 0) AS failed_count,
-                            COALESCE((SELECT count(*) FROM latest_test_case tc WHERE tc.status::text = 'SKIPPED'), 0) AS skipped_count,
-                            COALESCE((SELECT count(ac.ac_test_coverage_id)
-                                      FROM tbl_fact_ac_test_coverage ac
-                                      JOIN latest_test_case tc ON tc.test_case_id = ac.test_case_id
-                                      WHERE ac.ticket_id = :ticketId
-                                        AND tc.status::text <> 'FAILED'), 0) AS ac_coverage_count,
-                            COALESCE((SELECT count(DISTINCT ac.ac_key)
-                                      FROM tbl_fact_ac_test_coverage ac
-                                      JOIN latest_test_case tc ON tc.test_case_id = ac.test_case_id
-                                      JOIN tbl_fact_acceptance_criteria criterion
-                                        ON criterion.ticket_id = ac.ticket_id
-                                       AND criterion.ac_key = ac.ac_key
-                                       AND criterion.status = 'ACTIVE'
-                                      WHERE ac.ticket_id = :ticketId
-                                        AND tc.status::text <> 'FAILED'), 0) AS distinct_covered_ac_count,
-                            COALESCE((SELECT bool_or(l.test_run_id IS NOT NULL)
-                                      FROM latest_test_run l), FALSE) AS present_flag,
-                            COALESCE((SELECT l.collected_at
-                                      FROM latest_test_run l), now()) AS collected_at,
-                            COALESCE((SELECT l.status::text
-                                      FROM latest_test_run l), '') AS status,
-                            (SELECT l.test_run_id FROM latest_test_run l) AS test_run_id
-                        """,
+        List<TestSignal> rows = jdbc.query("""
+                WITH latest_test_run AS (
+                SELECT
+                    tr.test_run_id,
+                    tr.status,
+                        tr.passed_count,
+                        tr.failed_count,
+                        tr.skipped_count,
+                        tr.collected_at
+                    FROM tbl_fact_test_run tr
+                    WHERE tr.ticket_id = :ticketId
+                    ORDER BY COALESCE(tr.collected_at, now()) DESC, tr.test_run_id DESC
+                    LIMIT 1
+                )
+                SELECT
+                    COALESCE((SELECT count(*) FROM latest_test_run), 0) AS test_run_count,
+                    COALESCE((SELECT count(DISTINCT tc.test_case_id)
+                              FROM tbl_fact_test_case tc
+                              JOIN latest_test_run l ON l.test_run_id = tc.test_run_id), 0) AS test_case_count,
+                    COALESCE((SELECT l.passed_count
+                              FROM latest_test_run l), 0) AS passed_count,
+                    COALESCE((SELECT l.failed_count
+                              FROM latest_test_run l), 0) AS failed_count,
+                    COALESCE((SELECT l.skipped_count
+                              FROM latest_test_run l), 0) AS skipped_count,
+                     COALESCE((SELECT count(ac.ac_test_coverage_id)
+                               FROM tbl_fact_ac_test_coverage ac
+                               WHERE ac.ticket_id = :ticketId
+                                 AND COALESCE(ac.coverage_status, '') <> 'PLANNED'), 0) AS ac_coverage_count,
+                     COALESCE((SELECT count(DISTINCT ac.ac_key)
+                               FROM tbl_fact_ac_test_coverage ac
+                               JOIN tbl_fact_acceptance_criteria criterion
+                                 ON criterion.ticket_id = ac.ticket_id
+                                AND criterion.ac_key = ac.ac_key
+                                AND criterion.status = 'ACTIVE'
+                               WHERE ac.ticket_id = :ticketId
+                                 AND COALESCE(ac.coverage_status, '') <> 'PLANNED'), 0) AS distinct_covered_ac_count,
+                    COALESCE((SELECT bool_or(l.test_run_id IS NOT NULL)
+                              FROM latest_test_run l), FALSE) AS present_flag,
+                    COALESCE((SELECT l.collected_at
+                              FROM latest_test_run l), now()) AS collected_at,
+                    COALESCE((SELECT l.status::text
+                              FROM latest_test_run l), '') AS status,
+                    (SELECT l.test_run_id FROM latest_test_run l) AS test_run_id
+                """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new TestSignal(
                         rs.getInt("test_run_count"),
@@ -652,7 +629,8 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                         rs.getObject("collected_at", OffsetDateTime.class),
                         rs.getObject("test_run_id", UUID.class) == null
                                 ? List.of()
-                                : List.of("tbl_fact_test_run:" + rs.getObject("test_run_id", UUID.class))));
+                                : List.of("tbl_fact_test_run:" + rs.getObject("test_run_id", UUID.class))
+                ));
         if (rows.isEmpty()) {
             return new TestSignal(0, 0, 0, 0, 0, 0, 0, null, false, null, List.of());
         }
@@ -676,16 +654,11 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> {
                     List<String> types = new ArrayList<>();
-                    if (rs.getBoolean("ticket_to_spec"))
-                        types.add("ticket->spec");
-                    if (rs.getBoolean("spec_to_pr"))
-                        types.add("spec->pr");
-                    if (rs.getBoolean("pr_to_ci"))
-                        types.add("pr->ci");
-                    if (rs.getBoolean("ci_to_test"))
-                        types.add("ci->test");
-                    if (rs.getBoolean("test_to_report"))
-                        types.add("test->report");
+                    if (rs.getBoolean("ticket_to_spec")) types.add("ticket->spec");
+                    if (rs.getBoolean("spec_to_pr")) types.add("spec->pr");
+                    if (rs.getBoolean("pr_to_ci")) types.add("pr->ci");
+                    if (rs.getBoolean("ci_to_test")) types.add("ci->test");
+                    if (rs.getBoolean("test_to_report")) types.add("test->report");
                     int presentLinkCount = types.size();
                     return new TraceabilitySignal(
                             rs.getInt("link_count"),
@@ -694,7 +667,8 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
                             presentLinkCount >= 4,
                             types,
                             List.of("tbl_fact_traceability_link:" + ticketId),
-                            rs.getObject("collected_at", OffsetDateTime.class));
+                            rs.getObject("collected_at", OffsetDateTime.class)
+                    );
                 });
         if (rows.isEmpty()) {
             return new TraceabilitySignal(0, 5, 0, false, List.of(), List.of(), null);
@@ -703,17 +677,16 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
     }
 
     private OffsetDateTime findLatestSourceTimestamp(UUID ticketId) {
-        List<OffsetDateTime> values = jdbc.query(
-                """
-                        SELECT max(ts) AS latest_source_at
-                        FROM (
-                            SELECT max(a.collected_at) AS ts FROM tbl_fact_artifact_snapshot a WHERE a.ticket_id = :ticketId
-                            UNION ALL SELECT max(r.collected_at) AS ts FROM tbl_fact_review r WHERE r.ticket_id = :ticketId
-                            UNION ALL SELECT max(c.collected_at) AS ts FROM tbl_fact_ci_run c WHERE c.ticket_id = :ticketId
-                            UNION ALL SELECT max(t.collected_at) AS ts FROM tbl_fact_test_run t WHERE t.ticket_id = :ticketId
-                            UNION ALL SELECT max(e.generated_at) AS ts FROM tbl_fact_evidence_report e WHERE e.ticket_id = :ticketId
-                        ) source_times
-                        """,
+        List<OffsetDateTime> values = jdbc.query("""
+                SELECT max(ts) AS latest_source_at
+                FROM (
+                    SELECT max(a.collected_at) AS ts FROM tbl_fact_artifact_snapshot a WHERE a.ticket_id = :ticketId
+                    UNION ALL SELECT max(r.collected_at) AS ts FROM tbl_fact_review r WHERE r.ticket_id = :ticketId
+                    UNION ALL SELECT max(c.collected_at) AS ts FROM tbl_fact_ci_run c WHERE c.ticket_id = :ticketId
+                    UNION ALL SELECT max(t.collected_at) AS ts FROM tbl_fact_test_run t WHERE t.ticket_id = :ticketId
+                    UNION ALL SELECT max(e.generated_at) AS ts FROM tbl_fact_evidence_report e WHERE e.ticket_id = :ticketId
+                ) source_times
+                """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> rs.getObject("latest_source_at", OffsetDateTime.class));
         return values.isEmpty() ? null : values.getFirst();

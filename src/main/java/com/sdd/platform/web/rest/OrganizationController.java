@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.OrganizationService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.OrganizationDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,7 +46,7 @@ public class OrganizationController {
 
     @PostMapping
     public ResponseEntity<OrganizationDtos.OrganizationDto> create(
-            @Valid @RequestBody OrganizationDtos.CreateOrganizationRequest request,
+            @RequestBody OrganizationDtos.CreateOrganizationRequest request,
             @CurrentUser AppUser caller
     ) {
         var created = service.create(
@@ -62,7 +61,7 @@ public class OrganizationController {
     @PutMapping("/{id}")
     public OrganizationDtos.OrganizationDto update(
             @PathVariable UUID id,
-            @Valid @RequestBody OrganizationDtos.UpdateOrganizationRequest request,
+            @RequestBody OrganizationDtos.UpdateOrganizationRequest request,
             @CurrentUser AppUser caller
     ) {
         return OrganizationDtos.OrganizationDto.from(service.update(

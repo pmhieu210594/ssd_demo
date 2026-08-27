@@ -12,7 +12,7 @@ import java.util.UUID;
 @Mapper
 public interface RoleMapper {
 
-    List<Role> findActive(@Param("keyword") String keyword, @Param("status") String status);
+    List<Role> findActive(@Param("keyword") String keyword, @Param("sort") String sort);
 
     Optional<Role> findById(@Param("roleId") UUID roleId);
 

@@ -91,10 +91,7 @@ public final class GitPrMetadataCollectorModels {
             String externalReviewId,
             String reviewerLogin,
             String state,
-            String body,
-            String filePath,
-            OffsetDateTime submittedAt,
-            String submittedBy
+            OffsetDateTime submittedAt
     ) {
     }
 
@@ -112,10 +109,8 @@ public final class GitPrMetadataCollectorModels {
     public record ReviewUpsert(
             UUID prId,
             UUID ticketId,
-            UUID reviewerMemberKey,
             String state,
             OffsetDateTime submittedAt,
-            String submittedBy,
             int commentCount,
             OffsetDateTime collectedAt
     ) {
@@ -165,7 +160,7 @@ public final class GitPrMetadataCollectorModels {
             OffsetDateTime updatedAt,
             OffsetDateTime mergedAt,
             OffsetDateTime closedAt,
-            String authorDisplayName,
+            String authorPseudonym,
             UUID authorMemberKey,
             String labelsJson,
             String linkedIssueKey,

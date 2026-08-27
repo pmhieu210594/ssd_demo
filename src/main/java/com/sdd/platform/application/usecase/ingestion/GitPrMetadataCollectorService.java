@@ -23,6 +23,7 @@ import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreService;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ConnectorScope;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.RepositoryScope;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.TicketScope;
+import com.sdd.platform.domain.exception.BusinessRuleException;
 import com.sdd.platform.domain.exception.NotFoundException;
 import com.sdd.platform.domain.model.AppUser;
 import org.slf4j.MDC;
@@ -234,8 +235,8 @@ public class GitPrMetadataCollectorService {
         OffsetDateTime collectedAt = OffsetDateTime.now(ZoneOffset.UTC);
         String labelsJson = toJson(graph.labels());
         String descriptionHash = hashNullable(graph.body());
+        String authorPseudonym = pseudonym(graph.authorLogin());
         UUID authorMemberKey = resolveMemberKey(graph.authorLogin());
-        String authorDisplayName = resolveAuthorDisplayName(graph.authorLogin(), authorMemberKey);
         String status = normalizePullRequestStatus(graph.state(), graph.merged());
         String reviewState = normalizeReviewState(graph.reviewState());
         OffsetDateTime lastCommitAt = graph.commits().stream()
@@ -245,7 +246,7 @@ public class GitPrMetadataCollectorService {
                 .orElse(null);
         String upsertKey = linkedTicketKey != null ? linkedTicketKey : inferredTicketKey;
         if (upsertKey != null && !upsertKey.isBlank()) {
-            ticket = persistence.upsertMinimalTicket(repository.projectId(), upsertKey, graph.title(), status, lastCommitAt, authorDisplayName);
+            ticket = persistence.upsertMinimalTicket(repository.projectId(), upsertKey, graph.title(), status, lastCommitAt);
             ticketId = ticket != null ? ticket.ticketId() : ticketId;
             linkedTicketKey = ticket != null ? ticket.externalTicketKey() : linkedTicketKey;
         }
@@ -264,7 +265,7 @@ public class GitPrMetadataCollectorService {
                 graph.updatedAt(),
                 graph.mergedAt(),
                 graph.closedAt(),
-                authorDisplayName,
+                authorPseudonym,
                 authorMemberKey,
                 labelsJson,
                 linkedTicketKey,
@@ -347,28 +348,14 @@ public class GitPrMetadataCollectorService {
             long commentCount = graph.reviewComments().stream()
                     .filter(c -> review.externalReviewId().equals(c.externalReviewId()))
                     .count();
-            UUID reviewerMemberKey = resolveMemberKeyByPseudonym(review.reviewerLogin());
             UUID reviewId = persistence.insertReview(new ReviewUpsert(
                     prId,
                     ticketId,
-                    reviewerMemberKey,
                     normalizeReviewState(review.state()),
                     review.submittedAt(),
-                    review.submittedBy(),
                     (int) commentCount,
                     collectedAt
             ));
-            if (review.body() != null && !review.body().isBlank()) {
-                persistence.insertReviewComment(new ReviewCommentUpsert(
-                        reviewId,
-                        prId,
-                        ticketId,
-                        review.body(),
-                        review.filePath() != null && !review.filePath().isBlank() ? hash(review.filePath()) : null,
-                        null,
-                        collectedAt
-                ));
-            }
             externalReviewIdToDbId.put(review.externalReviewId(), reviewId);
             reviewCount++;
         }
@@ -381,7 +368,7 @@ public class GitPrMetadataCollectorService {
                     reviewId,
                     prId,
                     ticketId,
-                    comment.body(),
+                    hashNullable(comment.body()),
                     comment.filePath() != null && !comment.filePath().isBlank() ? hash(comment.filePath()) : null,
                     comment.line() != null && comment.line() > 0 ? comment.line() : null,
                     collectedAt
@@ -736,26 +723,6 @@ public class GitPrMetadataCollectorService {
             return null;
         }
         return persistence.findMemberKeyByExternalUserHash(hash(authorLogin.trim().toLowerCase(Locale.ROOT))).orElse(null);
-    }
-
-    private UUID resolveMemberKeyByPseudonym(String pseudonym) {
-        if (pseudonym == null || pseudonym.isBlank()) {
-            return null;
-        }
-        return persistence.findMemberKeyByPseudonym(pseudonym.trim()).orElse(null);
-    }
-
-    private String resolveAuthorDisplayName(String authorLogin, UUID authorMemberKey) {
-        if (authorMemberKey != null) {
-            String fullname = persistence.findFullnameByMemberKey(authorMemberKey).orElse(null);
-            if (fullname != null && !fullname.isBlank()) {
-                return fullname.trim();
-            }
-        }
-        if (authorLogin != null && !authorLogin.isBlank()) {
-            return authorLogin.trim();
-        }
-        return "Unknown";
     }
 
     private String toJson(List<String> labels) {

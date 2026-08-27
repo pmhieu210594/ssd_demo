@@ -46,14 +46,11 @@ class CustomerServiceTest {
     @Mock
     private OrganizationRepositoryPort organizationRepository;
 
-    @Mock
-    private AdminAuditLogService adminAuditLogService;
-
     private CustomerService service;
 
     @BeforeEach
     void setUp() {
-        service = new CustomerService(customerRepository, organizationRepository, adminAuditLogService);
+        service = new CustomerService(customerRepository, organizationRepository);
     }
 
     @Test

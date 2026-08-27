@@ -66,7 +66,7 @@ class SecurityEvidenceIngestServiceTest {
                         12,
                         "feature/test"
                 )));
-        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", UUID.fromString("00000000-0000-0000-0000-000000000101"), "27661036403"))
+        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", UUID.fromString("00000000-0000-0000-0000-000000000101"), "27661036403", "918273645"))
                 .thenReturn(Optional.of(UUID.fromString("00000000-0000-0000-0000-000000000201")));
     }
 

@@ -1,6 +1,7 @@
 package com.sdd.platform.application.usecase.quality;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,48 @@ public final class EvidenceQualityScoreModels {
     public static final String DEFAULT_RULE_VERSION = "v0";
     public static final String SCORE_METRIC_CODE = "EVIDENCE_QUALITY_SCORE";
     public static final String SCORE_METRIC_NAME = "Evidence Quality Score";
+
+    public enum ScoreBand {
+        EXCELLENT("Excellent"),
+        GOOD("Good"),
+        WARNING("Warning"),
+        RISKY("Risky"),
+        CRITICAL("Critical");
+
+        private final String displayName;
+
+        ScoreBand(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        public static ScoreBand fromScore(BigDecimal score) {
+            BigDecimal normalized = normalize(score);
+            if (normalized.compareTo(BigDecimal.valueOf(90)) >= 0) {
+                return EXCELLENT;
+            }
+            if (normalized.compareTo(BigDecimal.valueOf(75)) >= 0) {
+                return GOOD;
+            }
+            if (normalized.compareTo(BigDecimal.valueOf(60)) >= 0) {
+                return WARNING;
+            }
+            if (normalized.compareTo(BigDecimal.valueOf(40)) >= 0) {
+                return RISKY;
+            }
+            return CRITICAL;
+        }
+
+        private static BigDecimal normalize(BigDecimal score) {
+            if (score == null) {
+                return BigDecimal.ZERO;
+            }
+            return score.setScale(2, RoundingMode.HALF_UP);
+        }
+    }
 
     public record ScoreRequest(
             UUID ticketId,
@@ -48,6 +91,7 @@ public final class EvidenceQualityScoreModels {
             UUID metricValueId,
             UUID ticketId,
             BigDecimal score,
+            String band,
             List<ScoreCriterion> breakdown,
             List<String> missing,
             List<String> parseErrors,
@@ -71,6 +115,7 @@ public final class EvidenceQualityScoreModels {
                     metricValueId,
                     ticketId,
                     score,
+                    band,
                     breakdown,
                     missing,
                     parseErrors,
@@ -153,6 +198,7 @@ public final class EvidenceQualityScoreModels {
             String status,
             String ciUrl,
             String externalRunId,
+            String externalJobId,
             int jobCount,
             int linkedJobCount,
             OffsetDateTime collectedAt,

@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.ProjectService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.ProjectDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,7 +47,7 @@ public class ProjectController {
 
     @PostMapping
     public ResponseEntity<ProjectDtos.ProjectDto> create(
-            @Valid @RequestBody ProjectDtos.CreateProjectRequest request,
+            @RequestBody ProjectDtos.CreateProjectRequest request,
             @CurrentUser AppUser caller
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ProjectDtos.ProjectDto.from(service.create(
@@ -64,7 +63,7 @@ public class ProjectController {
     @PutMapping("/{id}")
     public ProjectDtos.ProjectDto update(
             @PathVariable UUID id,
-            @Valid @RequestBody ProjectDtos.UpdateProjectRequest request,
+            @RequestBody ProjectDtos.UpdateProjectRequest request,
             @CurrentUser AppUser caller
     ) {
         return ProjectDtos.ProjectDto.from(service.update(

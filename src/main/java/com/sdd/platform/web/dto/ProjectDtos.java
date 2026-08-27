@@ -3,7 +3,6 @@ package com.sdd.platform.web.dto;
 import com.sdd.platform.application.usecase.common.PageResult;
 import com.sdd.platform.domain.model.Project;
 import com.sdd.platform.domain.model.ProjectTeamAssignment;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -100,7 +99,6 @@ public final class ProjectDtos {
         }
     }
 
-    @NoXssFields
     public record CreateProjectRequest(
             UUID customerId,
             String projectAlias,
@@ -110,7 +108,6 @@ public final class ProjectDtos {
     ) {
     }
 
-    @NoXssFields
     public record UpdateProjectRequest(
             UUID customerId,
             String projectAlias,

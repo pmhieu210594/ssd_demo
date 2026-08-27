@@ -36,7 +36,7 @@ class OrganizationServiceUnitTest {
         @BeforeEach
         void setUp() {
                 repository = Mockito.mock(OrganizationRepositoryPort.class);
-                service = new OrganizationService(repository, Mockito.mock(AdminAuditLogService.class));
+                service = new OrganizationService(repository);
                 admin = user(AppUser.Role.ADMIN, "admin@example.com");
                 viewer = user(AppUser.Role.VIEWER, "viewer@example.com");
         }

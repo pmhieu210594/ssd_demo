@@ -27,9 +27,6 @@ class OrganizationServiceTest {
     @Mock
     private OrganizationRepositoryPort repository;
 
-    @Mock
-    private AdminAuditLogService adminAuditLogService;
-
     @InjectMocks
     private OrganizationService service;
 

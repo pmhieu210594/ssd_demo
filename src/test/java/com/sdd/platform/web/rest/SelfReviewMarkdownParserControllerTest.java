@@ -42,13 +42,13 @@ class SelfReviewMarkdownParserControllerTest {
         assertThat(result.get("parseStatus")).isEqualTo("PARTIAL");
         assertThat(result.get("artifactStatus")).isEqualTo("present");
         assertThat(result.get("artifactExists")).isEqualTo(Boolean.TRUE);
-        assertThat(castList(result.get("tables"))).hasSize(12);
-        assertThat(castList(result.get("freeTextSections"))).isEmpty();
-        assertThat(result.get("finalVerdict")).isNull();
+        assertThat(castList(result.get("tables"))).hasSize(6);
+        assertThat(castList(result.get("freeTextSections"))).hasSizeGreaterThanOrEqualTo(4);
+        assertThat(result.get("finalVerdict")).isEqualTo("PASS");
         assertThat(castMap(result.get("parsedSummary")))
-                .containsEntry("final_verdict", null)
+                .containsEntry("final_verdict", "PASS")
                 .containsEntry("parse_status", "PARTIAL")
-                .containsKey("warning_count");
+                .containsEntry("warning_count", 1);
     }
 
     @Test

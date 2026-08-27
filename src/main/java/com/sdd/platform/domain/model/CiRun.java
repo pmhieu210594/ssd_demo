@@ -16,7 +16,9 @@ public class CiRun {
     private UUID connectorRunId;
     private String ciProvider;
     private String externalRunId;
+    private String externalJobId;
     private String workflowName;
+    private String jobName;
     private String status;
     private OffsetDateTime startedAt;
     private OffsetDateTime completedAt;

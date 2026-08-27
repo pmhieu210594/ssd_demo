@@ -1,7 +1,6 @@
 package com.sdd.platform.application.usecase.traceability;
 
 import com.sdd.platform.application.port.out.persistence.TraceabilityRepositoryPort;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityReviewCommentRow;
 import com.sdd.platform.domain.exception.NotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,8 +93,6 @@ public class TraceabilityService {
         int ciCount = ciRuns.isEmpty() ? 0 : 1;
         int foundCount = artifactCount + prCount + ciCount;
         int completenessPercent = (int) Math.round(foundCount * 100.0 / EXPECTED_EVIDENCE_COUNT);
-        int reviewRoundCount = repository.findReviewRoundCount(ticketId);
-        List<TraceabilityReviewCommentRow> reviewComments = repository.findReviewComments(ticketId);
 
         TraceabilityModels.Summary summary = new TraceabilityModels.Summary(
                 ticket.ticketId(),
@@ -108,8 +105,7 @@ public class TraceabilityService {
                 pullRequests.size(),
                 commits.size(),
                 ciRuns.size(),
-                brokenLinks.size(),
-                reviewRoundCount
+                brokenLinks.size()
         );
 
         return new TraceabilityModels.TraceabilityView(
@@ -120,8 +116,7 @@ public class TraceabilityService {
                 ciRuns,
                 links,
                 brokenLinks,
-                timelineEvents,
-                reviewComments
+                timelineEvents
         );
     }
 
@@ -134,8 +129,7 @@ public class TraceabilityService {
                 true,
                 row == null ? null : row.sourcePath(),
                 row != null && row.existsFlag(),
-                row == null ? null : row.collectedAt(),
-                row == null ? null : row.schemaVersion()
+                row == null ? null : row.collectedAt()
         );
     }
 
@@ -161,7 +155,6 @@ public class TraceabilityService {
                 row.commitHash(),
                 row.branchName(),
                 row.messageHash(),
-                row.commitUrl(),
                 row.committedAt(),
                 row.collectedAt()
         );
@@ -279,9 +272,7 @@ public class TraceabilityService {
         if (section == null) {
             return false;
         }
-        boolean consideredPresent = section.presentFlag()
-                || (section.validFlag() != null && section.validFlag());
-        if (section.requiredFlag() && !consideredPresent) {
+        if (section.requiredFlag() && !section.presentFlag()) {
             return true;
         }
         if (section.validFlag() != null && !section.validFlag()) {

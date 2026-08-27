@@ -1,7 +1,6 @@
 package com.sdd.platform.application.usecase.traceability;
 
 import com.sdd.platform.application.port.out.persistence.TraceabilityRepositoryPort;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityReviewCommentRow;
 import com.sdd.platform.domain.exception.NotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +67,6 @@ class TraceabilityServiceTest {
                         "0123456789abcdef0123456789abcdef01234567",
                         "feature/ABC-123",
                         "hash-1",
-                        "https://github.com/example/repo/commit/abc123",
                         OffsetDateTime.parse("2026-06-20T11:00:00Z"),
                         OffsetDateTime.parse("2026-06-20T11:05:00Z")
                 )
@@ -236,45 +234,6 @@ class TraceabilityServiceTest {
     }
 
     @Test
-    void getTraceability_includes_review_round_count_and_review_comments() {
-        Mockito.when(repository.findTicket(ticketId))
-                .thenReturn(Optional.of(new TraceabilityModels.TicketRow(
-                        ticketId,
-                        UUID.randomUUID(),
-                        "ABC-123",
-                        "Traceability ticket",
-                        "OPEN"
-                )));
-        Mockito.when(repository.findArtifacts(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findPullRequests(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findCommits(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findCiRuns(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findTraceabilityLinks(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findParsedSections(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findEvidenceEvents(ticketId)).thenReturn(List.of());
-        Mockito.when(repository.findReviewRoundCount(ticketId)).thenReturn(3);
-        UUID reviewCommentId = UUID.fromString("cbb0b3c7-90ce-4b1b-82c0-1bbf9c17ef61");
-        Mockito.when(repository.findReviewComments(ticketId)).thenReturn(List.of(
-                new TraceabilityReviewCommentRow(
-                        reviewCommentId,
-                        "hash-of-file",
-                        12,
-                        "nit: rename variable",
-                        "APPROVED",
-                        "2026-06-20T13:00:00Z",
-                        "octocat"
-                )
-        ));
-
-        TraceabilityModels.TraceabilityView view = service.getTraceability(ticketId);
-
-        assertEquals(3, view.summary().reviewRoundCount());
-        assertEquals(1, view.reviewComments().size());
-        assertEquals(reviewCommentId, view.reviewComments().get(0).reviewCommentId());
-        assertEquals("octocat", view.reviewComments().get(0).submittedBy());
-    }
-
-    @Test
     void getTraceability_throws_not_found_for_missing_ticket() {
         Mockito.when(repository.findTicket(ticketId)).thenReturn(Optional.empty());
 
@@ -344,8 +303,7 @@ class TraceabilityServiceTest {
                 true,
                 "/docs/" + fileName,
                 true,
-                OffsetDateTime.parse("2026-06-20T09:00:00Z"),
-                null
+                OffsetDateTime.parse("2026-06-20T09:00:00Z")
         );
     }
 

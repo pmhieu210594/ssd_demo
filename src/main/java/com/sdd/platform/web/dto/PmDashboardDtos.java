@@ -15,11 +15,10 @@ public final class PmDashboardDtos {
 
     public record PmDashboardOptionDto(
             String value,
-            String label,
-            String role
+            String label
     ) {
         public static PmDashboardOptionDto from(PmDashboardModels.DashboardOption option) {
-            return new PmDashboardOptionDto(option.value(), option.label(), option.role());
+            return new PmDashboardOptionDto(option.value(), option.label());
         }
     }
 
@@ -33,53 +32,6 @@ public final class PmDashboardDtos {
         }
     }
 
-    public record TemplateUsageDto(
-            String phaseCode,
-            String phaseName,
-            long totalCheckCount,
-            long templateMatchCount,
-            BigDecimal usageRate
-    ) {
-        public static TemplateUsageDto from(PmDashboardModels.TemplateUsageRow row) {
-            BigDecimal usageRate = row.totalCheckCount() == 0
-                    ? null
-                    : BigDecimal.valueOf(Math.round(row.templateMatchCount() * 1000.0 / row.totalCheckCount()) / 10.0);
-            return new TemplateUsageDto(
-                    row.phaseCode(),
-                    row.phaseName(),
-                    row.totalCheckCount(),
-                    row.templateMatchCount(),
-                    usageRate);
-        }
-    }
-
-    public record AiFindingStatsDto(
-            UUID repositoryId,
-            String repositoryName,
-            BigDecimal blockerMajorResolutionRate,
-            BigDecimal aiReviewAdoptionRate,
-            BigDecimal aiReviewValidFindingRate,
-            BigDecimal aiFalsePositiveRate,
-            BigDecimal aiFindingResolutionRate
-    ) {
-        public static AiFindingStatsDto from(PmDashboardModels.AiFindingStatsRow row) {
-            return new AiFindingStatsDto(
-                    row.repositoryId(),
-                    row.repositoryName(),
-                    rate(row.blockerMajorResolvedSum(), row.blockerMajorTotalSum()),
-                    rate(row.aiReviewAdoptedSum(), row.aiReviewFindingTotalSum()),
-                    rate(row.aiReviewValidSum(), row.aiReviewFindingTotalSum()),
-                    rate(row.aiReviewFalsePositiveSum(), row.aiReviewFindingTotalSum()),
-                    rate(row.aiReviewResolvedSum(), row.aiReviewFindingTotalSum()));
-        }
-
-        private static BigDecimal rate(long numerator, long denominator) {
-            return denominator == 0
-                    ? null
-                    : BigDecimal.valueOf(Math.round(numerator * 1000.0 / denominator) / 10.0);
-        }
-    }
-
     public record PmDashboardSummaryDto(
             long blockedTicketCount,
             long missingEvidenceTicketCount,
@@ -87,11 +39,10 @@ public final class PmDashboardDtos {
             long openIssueCount,
             long waitingReviewTicketCount,
             long ciFailedTicketCount,
-            long firstCiPassTicketCount,
-            long ticketWithCiCount,
             long riskTicketCount,
             long exceptionTicketCount,
             BigDecimal averageEvidenceQualityScore,
+            String averageScoreBand,
             String phaseBottleneckPhaseCode,
             String phaseBottleneckPhaseName,
             long phaseBottleneckBlockedCount,
@@ -105,11 +56,10 @@ public final class PmDashboardDtos {
                     summary.openIssueCount(),
                     summary.waitingReviewTicketCount(),
                     summary.ciFailedTicketCount(),
-                    summary.firstCiPassTicketCount(),
-                    summary.ticketWithCiCount(),
                     summary.riskTicketCount(),
                     summary.exceptionTicketCount(),
                     summary.averageEvidenceQualityScore(),
+                    summary.averageScoreBand(),
                     summary.phaseBottleneckPhaseCode(),
                     summary.phaseBottleneckPhaseName(),
                     summary.phaseBottleneckBlockedCount(),
@@ -140,12 +90,9 @@ public final class PmDashboardDtos {
             String repositoryName,
             String externalTicketKey,
             String title,
-            String status,
             UUID phaseId,
             String phaseCode,
             String phaseName,
-            String phaseDescription,
-            OffsetDateTime phaseCreatedAt,
             int phaseOrder,
             boolean blockedFlag,
             boolean waitingReviewFlag,
@@ -157,17 +104,13 @@ public final class PmDashboardDtos {
             int ciFailedCount,
             String highestRiskSeverity,
             BigDecimal evidenceQualityScore,
+            String scoreBand,
             String scoreRuleVersion,
             int ageDays,
             String ownerDisplay,
             String periodKey,
-            OffsetDateTime createdAt,
             OffsetDateTime updatedAt,
-            OffsetDateTime refreshedAt,
-            Integer artifactVersion,
-            OffsetDateTime mergedAt,
-            OffsetDateTime startedAt,
-            OffsetDateTime completedAt
+            OffsetDateTime refreshedAt
     ) {
         public static PmDashboardTicketRowDto from(PmDashboardModels.DashboardTicketRow row) {
             return new PmDashboardTicketRowDto(
@@ -178,12 +121,9 @@ public final class PmDashboardDtos {
                     row.repositoryName(),
                     row.externalTicketKey(),
                     row.title(),
-                    row.status(),
                     row.phaseId(),
                     row.phaseCode(),
                     row.phaseName(),
-                    row.phaseDescription(),
-                    row.phaseCreatedAt(),
                     row.phaseOrder(),
                     row.blockedFlag(),
                     row.waitingReviewFlag(),
@@ -195,17 +135,13 @@ public final class PmDashboardDtos {
                     row.ciFailedCount(),
                     row.highestRiskSeverity(),
                     row.evidenceQualityScore(),
+                    row.scoreBand(),
                     row.scoreRuleVersion(),
                     row.ageDays(),
                     row.ownerDisplay(),
                     row.periodKey(),
-                    row.createdAt(),
                     row.updatedAt(),
-                    row.refreshedAt(),
-                    row.artifactVersion(),
-                    row.mergedAt(),
-                    row.startedAt(),
-                    row.completedAt()
+                    row.refreshedAt()
             );
         }
     }
@@ -301,40 +237,6 @@ public final class PmDashboardDtos {
                     item.approved(),
                     item.linkedReportPath()
             );
-            }
-    }
-
-    public record IssueItemDto(
-            UUID ticketIssueId,
-            UUID ticketId,
-            UUID repositoryId,
-            String sourceType,
-            int issueOrder,
-            String issueKey,
-            String issueTitle,
-            String issueImpact,
-            String issueOwner,
-            String issueStatus,
-            String issueSummary,
-            String sourcePath,
-            OffsetDateTime collectedAt
-    ) {
-        public static IssueItemDto from(PmDashboardModels.DashboardIssueItem item) {
-            return new IssueItemDto(
-                    item.ticketIssueId(),
-                    item.ticketId(),
-                    item.repositoryId(),
-                    item.sourceType(),
-                    item.issueOrder(),
-                    item.issueKey(),
-                    item.issueTitle(),
-                    item.issueImpact(),
-                    item.issueOwner(),
-                    item.issueStatus(),
-                    item.issueSummary(),
-                    item.sourcePath(),
-                    item.collectedAt()
-            );
         }
     }
 
@@ -362,43 +264,22 @@ public final class PmDashboardDtos {
         }
     }
 
-    public record PhaseDwellTimeItemDto(
-            String phaseCode,
-            int phaseOrder,
-            String phaseName,
-            String dwellTime
-    ) {
-        public static PhaseDwellTimeItemDto from(PmDashboardModels.PhaseDwellTimeItem item) {
-            return new PhaseDwellTimeItemDto(item.phaseCode(), item.phaseOrder(), item.phaseName(), item.dwellTime());
-        }
-    }
-
     public record PmDashboardTicketDetailDto(
             PmDashboardTicketRowDto row,
-            OffsetDateTime createdAt,
-            String ownerDisplay,
-            int reviewCount,
             List<MissingEvidenceItemDto> missingEvidenceItems,
             List<RiskItemDto> riskItems,
             List<ExceptionItemDto> exceptionItems,
-            List<IssueItemDto> issueItems,
             ScoreBreakdownDto scoreBreakdown,
-            String traceabilityUrl,
-            List<PhaseDwellTimeItemDto> phaseDwellTime
+            String traceabilityUrl
     ) {
         public static PmDashboardTicketDetailDto from(PmDashboardModels.DashboardTicketDetail detail) {
             return new PmDashboardTicketDetailDto(
                     PmDashboardTicketRowDto.from(detail.row()),
-                    detail.createdAt(),
-                    detail.ownerDisplay(),
-                    detail.reviewCount(),
                     detail.missingEvidenceItems().stream().map(MissingEvidenceItemDto::from).toList(),
                     detail.riskItems().stream().map(RiskItemDto::from).toList(),
                     detail.exceptionItems().stream().map(ExceptionItemDto::from).toList(),
-                    detail.issueItems().stream().map(IssueItemDto::from).toList(),
                     ScoreBreakdownDto.from(detail.scoreBreakdown()),
-                    detail.traceabilityUrl(),
-                    detail.phaseDwellTime().stream().map(PhaseDwellTimeItemDto::from).toList()
+                    detail.traceabilityUrl()
             );
         }
     }

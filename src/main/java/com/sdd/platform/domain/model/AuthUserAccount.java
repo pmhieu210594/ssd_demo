@@ -26,11 +26,6 @@ public class AuthUserAccount {
     private String passwordAlgo;
     private boolean active;
     private String roleName;
-    private Integer roleDeleteFlag;
     @Builder.Default
     private List<String> accessScopes = new ArrayList<>();
-
-    public boolean isRoleDeleted() {
-        return roleDeleteFlag != null && roleDeleteFlag == 1;
-    }
 }

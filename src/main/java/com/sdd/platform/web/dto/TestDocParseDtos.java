@@ -37,7 +37,7 @@ public final class TestDocParseDtos {
                     projectId, repositoryId, ticketId, parseMode, sourcePath, sourceText,
                     parserName == null || parserName.isBlank() ? TestPlanParseService.DEFAULT_PARSER_NAME : parserName,
                     parserVersion == null || parserVersion.isBlank() ? TestPlanParseService.DEFAULT_PARSER_VERSION : parserVersion,
-                    traceId, ciGateStatus, null, null);
+                    traceId, ciGateStatus);
         }
     }
 
@@ -58,7 +58,7 @@ public final class TestDocParseDtos {
                     projectId, repositoryId, ticketId, parseMode, sourcePath, sourceText,
                     parserName == null || parserName.isBlank() ? TestResultsParseService.DEFAULT_PARSER_NAME : parserName,
                     parserVersion == null || parserVersion.isBlank() ? TestResultsParseService.DEFAULT_PARSER_VERSION : parserVersion,
-                    traceId, ciGateStatus, null, null);
+                    traceId, ciGateStatus);
         }
     }
 
@@ -74,7 +74,7 @@ public final class TestDocParseDtos {
             String parseStatus,
             String sourcePath,
             String contentHash,
-            Integer schemaVersion,
+            String schemaVersion,
             Boolean schemaValid,
             Boolean templateEmptyFlag,
             List<String> requiredFieldsMissing,

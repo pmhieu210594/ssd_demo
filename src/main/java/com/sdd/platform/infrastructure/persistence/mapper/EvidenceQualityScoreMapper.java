@@ -6,11 +6,11 @@ import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.A
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.CiSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.LineageEntry;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ReviewSignal;
+import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreBand;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TestSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TraceabilitySignal;
-import com.sdd.platform.application.usecase.quality.ScoreThresholdConfigService;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.math.BigDecimal;
@@ -74,6 +74,7 @@ public final class EvidenceQualityScoreMapper {
                 rs.getString("status"),
                 rs.getString("ci_url"),
                 rs.getString("external_run_id"),
+                rs.getString("external_job_id"),
                 1,
                 hasAnyText(rs.getString("ci_url"), rs.getString("external_run_id")) ? 1 : 0,
                 rs.getObject("collected_at", OffsetDateTime.class),
@@ -109,12 +110,13 @@ public final class EvidenceQualityScoreMapper {
         );
     }
 
-    public static RowMapper<ScoreResult> scoreResultRowMapper(ObjectMapper objectMapper, ScoreThresholdConfigService scoreThresholdConfigService) {
+    public static RowMapper<ScoreResult> scoreResultRowMapper(ObjectMapper objectMapper) {
         return (rs, rowNum) -> new ScoreResult(
                 rs.getObject("evidence_quality_score_id", UUID.class),
                 rs.getObject("metric_value_id", UUID.class),
                 rs.getObject("ticket_id", UUID.class),
                 rs.getBigDecimal("score"),
+                toDisplayBand(rs.getString("score_band")),
                 readScoreCriteria(objectMapper, rs.getString("breakdown")),
                 readStringList(objectMapper, rs.getString("missing_items")),
                 readStringList(objectMapper, safeGetString(rs, "parse_errors")),
@@ -252,4 +254,17 @@ public final class EvidenceQualityScoreMapper {
         }
     }
 
+    private static String toDisplayBand(String band) {
+        if (band == null || band.isBlank()) {
+            return band;
+        }
+        return switch (band.trim().toUpperCase()) {
+            case "EXCELLENT" -> "Excellent";
+            case "GOOD" -> "Good";
+            case "WARNING" -> "Warning";
+            case "RISKY" -> "Risky";
+            case "CRITICAL" -> "Critical";
+            default -> band;
+        };
+    }
 }

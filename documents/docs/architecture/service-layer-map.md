@@ -27,7 +27,6 @@ Document the application/service/use-case layer: responsibilities of each servic
 | `CircleCiWebhookService` | `application/usecase/ingestion/CircleCiWebhookService.java` | Verify HMAC, parse CircleCI payloads, handle `workflow-completed` events | `CircleCiWebhookController.receive()` | `RepositoryRepositoryPort`, `CiRunIngestionPort` |
 | `ArtifactNormalizer` (domain service) | `domain/service/ArtifactNormalizer.java` (bean via `config/DomainConfig`) | Parse Markdown front-matter, extract sections and AC lines, compute content hash — pure domain logic | `DemoController` (via `ArtifactNormalizer.parse()`), potentially other ingestion flows | No external calls; pure function returns `ParsedArtifact` |
 | `PmDashboardService` | `application/usecase/pmdashboard/PmDashboardService.java` | PM Dashboard read model: PM role gate, filter normalization, ticket list / detail / summary / insights / CSV export / refresh delegation | `PmDashboardController` | `PmDashboardRepositoryPort` (persistence) |
-| `DataOpsDashboardService` | `application/usecase/dataopsdashboard/DataOpsDashboardService.java` | Data Ops Dashboard read model: role gate, filter normalization, KPI aggregation, connector detail lookup | `DataOpsDashboardController` | `DataOpsDashboardRepositoryPort` (read-only V4 aggregation) |
 | Ingestion adapters (ports) | `application.port.out.integration.*` (interfaces) | Abstraction points for ingestion into domain DB (pull requests, CI runs) | Called by webhook services, orchestrators | Implemented by infrastructure adapters (e.g., MyBatis mappers + repository adapter or specialized adapters) |
 
 Notes:
@@ -48,7 +47,6 @@ Notes:
 | `GithubWebhookController.receive()` | `GithubWebhookService.handle()` | Validate HMAC and process GitHub webhook payloads into domain via ingestion port |
 | `CircleCiWebhookController.receive()` | `CircleCiWebhookService.handle()` | Validate HMAC and process CircleCI webhook payloads into domain via ingestion port |
 | `PmDashboardController.*` (summary, insights, tickets, detail, export, refresh) | `PmDashboardService` | Read-only PM Dashboard endpoints under `/api/v1/pm/dashboard`; PM role required; export and refresh require additional permission |
-| `DataOpsDashboardController.*` (summary, connectors, filters, detail) | `DataOpsDashboardService` | Read-only operational dashboard endpoints under `/api/v1/data-ops/dashboard`; data-ops role required; aggregates live V4 metadata |
 
 ---
 
@@ -90,23 +88,10 @@ Notes:
 | `ConnectorOrchestrator.runOne()` | No `@Transactional` annotation present | Orchestrator saves start row, calls connector (external/integration), then updates run row — not enclosed in a single DB transaction (by design: long-running external calls should not hold DB transaction) |
 | `GithubWebhookService.handle()` | No `@Transactional` annotation present | Service verifies HMAC then performs upserts via ingestion port; ingestion adapters may manage transactions at repository level; overall no explicit service-level transaction annotation found |
 | `CircleCiWebhookService.handle()` | No explicit `@Transactional` annotation | Same considerations as GitHub service |
-| `DataOpsDashboardService` | `@Transactional(readOnly = true)` on read methods | Read-only dashboard aggregation should not hold write intent; aligns with live read model behavior |
-| `AdminAuditLogWriter` (ADMIN-AUDIT-LOG 2026-07) | `NESTED` propagation for CRUD audit hooks, `REQUIRES_NEW` for login/logout hooks | Best-effort side-effect write pattern — see below |
-| `TemplateUsageStatWriter` (PROMPT_TEMPLATE_REUSE_RATE 2026-08) | `REQUIRES_NEW` propagation, called from `GithubWebhookService`'s per-file validation loop (outside the webhook's own transactional scope) | Second confirmed implementer of the Best-Effort pattern below — see the round-3 pitfall note |
 
 Notes:
 - Transactional design is conservative: only short, critical DB updates (user upsert) are transactional.
 - Long-running external syncs are intentionally not wrapped in a transaction to avoid long DB locks and to allow partial progress and retry handling.
-
-### Best-Effort Audit Write Pattern (Confirmed — ADMIN-AUDIT-LOG 2026-07-10; reconfirmed PROMPT_TEMPLATE_REUSE_RATE 2026-08-17)
-
-When a cross-cutting write (e.g. an audit log entry, a usage-statistics counter) must never cause the primary business operation to fail or roll back, give it its own transaction boundary rather than letting it share the caller's:
-
-- **Hook called from inside an existing business `@Transactional` method** (e.g. a CRUD service's `create()`/`update()`/`delete()`): use `Propagation.NESTED` on the audit write. A savepoint isolates the audit insert — if it throws, only the audit insert rolls back, not the caller's business transaction.
-- **Hook called from outside any business transaction** (e.g. login/logout, which run before/after the request's own transactional scope; or a webhook's per-file validation loop): use `Propagation.REQUIRES_NEW` so the write gets its own transaction rather than silently running non-transactionally.
-- **`REQUIRES_NEW`/`NESTED` alone only isolates the transaction — it does not swallow the exception.** The `try/catch` at the *call site* (not just the propagation annotation on the writer bean) is the part that actually makes the write best-effort. `TemplateUsageStatWriter`'s first implementation used `REQUIRES_NEW` correctly but omitted the call-site `try/catch`, so a `DataAccessException` writing one file's counters still aborted the entire webhook and all remaining files in the same PR — caught in Phase 5 round 3 (Codex automated review, `OI-PROMPT_TEMPLATE_REUSE_RATE-17`). Always pair the propagation annotation with an explicit `catch` at the caller.
-- Catch and log (SLF4J) any exception from the write inside the writer *and* at the call site; never let it propagate to the caller.
-- This pattern generalizes to any future cross-cutting write that must be "fire and forget" relative to the primary operation. See `AdminAuditLogWriter.java`/`docs/knowledge/admin-audit-log.md` and `TemplateUsageStatWriter.java`/`docs/knowledge/prompt-template-reuse-rate.md` for reference implementations.
 
 ---
 
@@ -119,7 +104,6 @@ When a cross-cutting write (e.g. an audit log entry, a usage-statistics counter)
 | Webhook idempotency / uniqueness rely on DB constraints | `GithubWebhookService.handle()` + ingestion adapters | Code comments mention UNIQUE constraints on `(repository_id, external_pr_number)` to handle GitHub retries; ingestion should upsert rather than insert duplicates |
 | HMAC verification required for webhooks | `GithubWebhookService.verifySignature()` / `CircleCiWebhookService.verifySignature()` | Throws `SecurityException` if missing secret or mismatch; controllers map to 401 response; secrets stored in env-config `application.yml` keys (not read here) |
 | Demo file parsing guards | `DemoController.parseFile()` | Extension whitelist and path normalization to prevent reading arbitrary files; still marked DEV-only and should be removed in production |
-| Data Ops KPI definitions stay provisional until Product confirms them | `DataOpsDashboardService` / `DataOpsDashboardJdbcAdapter` | Freshness threshold, connector health formula, and broken traceability proxy should remain documented as open issues until confirmed |
 
 ---
 

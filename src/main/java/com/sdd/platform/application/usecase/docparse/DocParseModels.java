@@ -23,9 +23,7 @@ public final class DocParseModels {
             String parserName,
             String parserVersion,
             String traceId,
-            String ciGateStatus,
-            UUID connectorRunId,
-            OffsetDateTime sourceUpdatedAt
+            String ciGateStatus
     ) {}
 
     public record ParseSnapshot(
@@ -40,14 +38,12 @@ public final class DocParseModels {
             String parseStatus,
             String sourcePath,
             String contentHash,
-            Integer schemaVersion,
+            String schemaVersion,
             Boolean schemaValid,
             Boolean templateEmptyFlag,
             List<String> requiredFieldsMissing,
             String parsedSummaryJson,
             String parserVersion,
-            UUID connectorRunId,
-            OffsetDateTime sourceUpdatedAt,
             OffsetDateTime collectedAt
     ) {}
 
@@ -110,13 +106,11 @@ public final class DocParseModels {
     public record ParseDataQuality(
             UUID projectId,
             UUID repositoryId,
-            UUID connectorRunId,
             String sourceType,
             String sourceRef,
             int missingCount,
             int parseErrorCount,
             int schemaViolationCount,
-            Integer freshnessDelayMinutes,
             String errorSummary,
             OffsetDateTime checkedAt
     ) {}

@@ -23,6 +23,7 @@ import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -38,11 +39,11 @@ public class SecurityEvidenceIngestService {
     private final SecurityScanRepositoryPort scanRepositoryPort;
 
     public SecurityEvidenceIngestService(AppProperties props,
-            ObjectMapper objectMapper,
-            EvidenceRepositoryPort repositoryPort,
-            CiRunRepositoryPort ciRunRepositoryPort,
-            SafetyPackStatusRepositoryPort safetyPackStatusRepositoryPort,
-            SecurityScanRepositoryPort scanRepositoryPort) {
+                                         ObjectMapper objectMapper,
+                                         EvidenceRepositoryPort repositoryPort,
+                                         CiRunRepositoryPort ciRunRepositoryPort,
+                                         SafetyPackStatusRepositoryPort safetyPackStatusRepositoryPort,
+                                         SecurityScanRepositoryPort scanRepositoryPort) {
         this.props = props;
         this.objectMapper = objectMapper;
         this.repositoryPort = repositoryPort;
@@ -74,8 +75,7 @@ public class SecurityEvidenceIngestService {
         String workflowJobId = textOrNull(payload, "workflowJobId", "externalJobId");
         String workflowJobName = text(payload, "workflowJobName", "jobName");
         OffsetDateTime scannedAt = optionalTimestamp(payload, "scannedAt", "collectedAt");
-        Linkage linkage = resolveLinkage(repository, branchName, commitSha, pullRequestNumber, workflowRunId,
-                workflowJobId, workflowJobName);
+        Linkage linkage = resolveLinkage(repository, branchName, commitSha, pullRequestNumber, workflowRunId, workflowJobId, workflowJobName);
 
         JsonNode scans = payload.path("scans");
         if (!scans.isArray() || scans.isEmpty()) {
@@ -97,7 +97,8 @@ public class SecurityEvidenceIngestService {
                     workflowJobId,
                     workflowJobName,
                     scannedAt,
-                    scanNode);
+                    scanNode
+            );
             ingested++;
         }
 
@@ -112,18 +113,18 @@ public class SecurityEvidenceIngestService {
     }
 
     private void persistOne(EvidenceRepository repository,
-            String repositoryNameMasked,
-            String branchName,
-            String commitSha,
-            Integer pullRequestNumber,
-            UUID ticketId,
-            UUID prId,
-            UUID ciRunId,
-            String workflowRunId,
-            String workflowJobId,
-            String workflowJobName,
-            OffsetDateTime scannedAt,
-            JsonNode scanNode) {
+                            String repositoryNameMasked,
+                            String branchName,
+                            String commitSha,
+                            Integer pullRequestNumber,
+                            UUID ticketId,
+                            UUID prId,
+                            UUID ciRunId,
+                            String workflowRunId,
+                            String workflowJobId,
+                            String workflowJobName,
+                            OffsetDateTime scannedAt,
+                            JsonNode scanNode) {
         String scanType = text(scanNode, "scanType");
         String scannerName = text(scanNode, "scannerName", "tool");
         String scanTool = text(scanNode, "scanTool", "scannerName", "tool");
@@ -172,8 +173,7 @@ public class SecurityEvidenceIngestService {
                 .mediumCount(mediumCount)
                 .lowCount(lowCount)
                 .infoCount(infoCount)
-                .summary(buildSummary(policy.name(), scanTool, normalizedStatus, findingCount, unresolvedCount,
-                        criticalCount, highCount, mediumCount, lowCount, infoCount))
+                .summary(buildSummary(policy.name(), scanTool, normalizedStatus, findingCount, unresolvedCount, criticalCount, highCount, mediumCount, lowCount, infoCount))
                 .scanCountsJson(buildScanCountsJson(
                         policy.name(),
                         scannerName,
@@ -191,7 +191,8 @@ public class SecurityEvidenceIngestService {
                         commitSha,
                         workflowRunId,
                         workflowJobName,
-                        pullRequestNumber))
+                        pullRequestNumber
+                ))
                 .startedAt(optionalTimestamp(scanNode, "startedAt", "started_at"))
                 .finishedAt(optionalTimestamp(scanNode, "finishedAt", "finished_at"))
                 .collectedAt(scannedAt != null ? scannedAt : OffsetDateTime.now())
@@ -246,15 +247,15 @@ public class SecurityEvidenceIngestService {
     }
 
     private String buildSummary(String scanType,
-            String scanTool,
-            String status,
-            int findingCount,
-            int unresolvedCount,
-            int criticalCount,
-            int highCount,
-            int mediumCount,
-            int lowCount,
-            int infoCount) {
+                                String scanTool,
+                                String status,
+                                int findingCount,
+                                int unresolvedCount,
+                                int criticalCount,
+                                int highCount,
+                                int mediumCount,
+                                int lowCount,
+                                int infoCount) {
         return String.format(
                 "%s/%s status=%s findings=%d unresolved=%d critical=%d high=%d medium=%d low=%d info=%d",
                 scanType,
@@ -266,26 +267,27 @@ public class SecurityEvidenceIngestService {
                 highCount,
                 mediumCount,
                 lowCount,
-                infoCount);
+                infoCount
+        );
     }
 
     private String buildScanCountsJson(String scanType,
-            String scannerName,
-            String scanTool,
-            String scanStatus,
-            String severity,
-            int findingCount,
-            int unresolvedCount,
-            int criticalCount,
-            int highCount,
-            int mediumCount,
-            int lowCount,
-            int infoCount,
-            String branchName,
-            String commitSha,
-            String workflowRunId,
-            String workflowJobName,
-            Integer pullRequestNumber) {
+                                       String scannerName,
+                                       String scanTool,
+                                       String scanStatus,
+                                       String severity,
+                                       int findingCount,
+                                       int unresolvedCount,
+                                       int criticalCount,
+                                       int highCount,
+                                       int mediumCount,
+                                       int lowCount,
+                                       int infoCount,
+                                       String branchName,
+                                       String commitSha,
+                                       String workflowRunId,
+                                       String workflowJobName,
+                                       Integer pullRequestNumber) {
         try {
             java.util.Map<String, Object> normalized = new java.util.LinkedHashMap<>();
             normalized.put("scanType", scanType);
@@ -387,10 +389,8 @@ public class SecurityEvidenceIngestService {
         }
         if (child.isTextual()) {
             String value = child.asText().trim().toLowerCase();
-            if ("true".equals(value))
-                return Boolean.TRUE;
-            if ("false".equals(value))
-                return Boolean.FALSE;
+            if ("true".equals(value)) return Boolean.TRUE;
+            if ("false".equals(value)) return Boolean.FALSE;
         }
         return null;
     }
@@ -432,12 +432,12 @@ public class SecurityEvidenceIngestService {
     }
 
     private Linkage resolveLinkage(EvidenceRepository repository,
-            String branchName,
-            String commitSha,
-            Integer pullRequestNumber,
-            String workflowRunId,
-            String workflowJobId,
-            String workflowJobName) {
+                                   String branchName,
+                                   String commitSha,
+                                   Integer pullRequestNumber,
+                                   String workflowRunId,
+        String workflowJobId,
+        String workflowJobName) {
         UUID ticketId = null;
         UUID prId = null;
 
@@ -472,8 +472,7 @@ public class SecurityEvidenceIngestService {
         UUID ciRunId = null;
         String ciJobIdentity = workflowJobId != null && !workflowJobId.isBlank() ? workflowJobId : workflowJobName;
         if (workflowRunId != null && !workflowRunId.isBlank() && ciJobIdentity != null && !ciJobIdentity.isBlank()) {
-            ciRunId = ciRunRepositoryPort
-                    .findCiRunIdByIdentity("GITHUB_ACTIONS", repository.getRepositoryId(), workflowRunId)
+            ciRunId = ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", repository.getRepositoryId(), workflowRunId, ciJobIdentity)
                     .orElse(null);
         }
         if (ciRunId == null && ticketId != null) {
@@ -486,16 +485,11 @@ public class SecurityEvidenceIngestService {
     }
 
     private String resolveSeverity(int criticalCount, int highCount, int mediumCount, int lowCount, int infoCount) {
-        if (criticalCount > 0)
-            return "CRITICAL";
-        if (highCount > 0)
-            return "HIGH";
-        if (mediumCount > 0)
-            return "MEDIUM";
-        if (lowCount > 0)
-            return "LOW";
-        if (infoCount > 0)
-            return "INFO";
+        if (criticalCount > 0) return "CRITICAL";
+        if (highCount > 0) return "HIGH";
+        if (mediumCount > 0) return "MEDIUM";
+        if (lowCount > 0) return "LOW";
+        if (infoCount > 0) return "INFO";
         return "INFO";
     }
 
@@ -519,9 +513,7 @@ public class SecurityEvidenceIngestService {
         }
     }
 
-    public record Result(String handled, int recordsAffected) {
-    }
+    public record Result(String handled, int recordsAffected) {}
 
-    private record Linkage(UUID ticketId, UUID prId, UUID ciRunId) {
-    }
+    private record Linkage(UUID ticketId, UUID prId, UUID ciRunId) {}
 }

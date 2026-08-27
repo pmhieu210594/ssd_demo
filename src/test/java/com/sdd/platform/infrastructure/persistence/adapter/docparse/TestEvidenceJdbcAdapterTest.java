@@ -12,7 +12,6 @@ import java.util.UUID;
 import java.time.OffsetDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -54,29 +53,27 @@ class TestEvidenceJdbcAdapterTest {
 
         UUID ticketId = UUID.fromString("00000000-0000-0000-0000-00000000c201");
         UUID existingTestRunId = UUID.fromString("00000000-0000-0000-0000-00000000c202");
-        when(jdbc.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(UUID.class)))
-                .thenReturn(existingTestRunId);
+        when(jdbc.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(UUID.class))).thenReturn(existingTestRunId);
         when(jdbc.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
 
-        TestEvidencePersistencePort.TestRunRecord saved = adapter
-                .upsertTestRun(new TestEvidencePersistencePort.TestRunRecord(
-                        null,
-                        UUID.fromString("00000000-0000-0000-0000-00000000c203"),
-                        ticketId,
-                        null,
-                        null,
-                        "trace-1",
-                        "TEST_RESULTS",
-                        "SUCCESS",
-                        10,
-                        8,
-                        0,
-                        2,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null));
+        TestEvidencePersistencePort.TestRunRecord saved = adapter.upsertTestRun(new TestEvidencePersistencePort.TestRunRecord(
+                null,
+                UUID.fromString("00000000-0000-0000-0000-00000000c203"),
+                ticketId,
+                null,
+                null,
+                "trace-1",
+                "TEST_RESULTS",
+                "SUCCESS",
+                10,
+                8,
+                0,
+                2,
+                null,
+                null,
+                null,
+                null,
+                null));
 
         ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
         verify(jdbc).queryForObject(anyString(), any(MapSqlParameterSource.class), eq(UUID.class));
@@ -96,25 +93,24 @@ class TestEvidenceJdbcAdapterTest {
                 .thenThrow(new EmptyResultDataAccessException(1));
         when(jdbc.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
 
-        TestEvidencePersistencePort.TestRunRecord saved = adapter
-                .upsertTestRun(new TestEvidencePersistencePort.TestRunRecord(
-                        null,
-                        UUID.fromString("00000000-0000-0000-0000-00000000c302"),
-                        ticketId,
-                        null,
-                        null,
-                        "trace-2",
-                        "TEST_RESULTS",
-                        "SUCCESS",
-                        10,
-                        9,
-                        0,
-                        1,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null));
+        TestEvidencePersistencePort.TestRunRecord saved = adapter.upsertTestRun(new TestEvidencePersistencePort.TestRunRecord(
+                null,
+                UUID.fromString("00000000-0000-0000-0000-00000000c302"),
+                ticketId,
+                null,
+                null,
+                "trace-2",
+                "TEST_RESULTS",
+                "SUCCESS",
+                10,
+                9,
+                0,
+                1,
+                null,
+                null,
+                null,
+                null,
+                null));
 
         ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
         verify(jdbc).queryForObject(anyString(), any(MapSqlParameterSource.class), eq(UUID.class));
@@ -122,7 +118,7 @@ class TestEvidenceJdbcAdapterTest {
 
         UUID generatedTestRunId = (UUID) paramsCaptor.getValue().getValue("testRunId");
         assertEquals(generatedTestRunId, saved.testRunId());
-        assertNotNull(generatedTestRunId);
+        assertTrue(generatedTestRunId != null);
     }
 
     @Test
@@ -166,6 +162,7 @@ class TestEvidenceJdbcAdapterTest {
         assertTrue(sqlCaptor.getValue().contains("tbl_fact_test_case"));
     }
 
+
     @Test
     void replacePlannedCoverage_withEmptyAcList_deletes_planned_rows_without_inserts() {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
@@ -184,45 +181,6 @@ class TestEvidenceJdbcAdapterTest {
         assertTrue(sqlCaptor.getValue().contains("DELETE FROM tbl_fact_ac_test_coverage"));
         assertEquals(ticketId, paramsCaptor.getValue().getValue("ticketId"));
         assertEquals(1, paramsCaptor.getAllValues().size());
-    }
-
-    @Test
-    void replacePlannedCoverage_dedupes_duplicate_ac_keys() {
-        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-        TestEvidenceJdbcAdapter adapter = new TestEvidenceJdbcAdapter(jdbc);
-
-        when(jdbc.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
-
-        UUID snapshotId = UUID.fromString("00000000-0000-0000-0000-00000000c105");
-        UUID ticketId = UUID.fromString("00000000-0000-0000-0000-00000000c106");
-
-        adapter.replacePlannedCoverage(snapshotId, ticketId, "hash-3", List.of("AC-1", "AC-1", "AC-2"));
-
-        ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
-        verify(jdbc, times(3)).update(anyString(), paramsCaptor.capture());
-
-        List<MapSqlParameterSource> paramValues = paramsCaptor.getAllValues();
-        assertEquals(ticketId, paramValues.get(0).getValue("ticketId"));
-
-        String firstInsertAcKey = (String) paramValues.get(1).getValue("acKey");
-        String secondInsertAcKey = (String) paramValues.get(2).getValue("acKey");
-        assertTrue((firstInsertAcKey.equals("AC-1") && secondInsertAcKey.equals("AC-2"))
-                || (firstInsertAcKey.equals("AC-2") && secondInsertAcKey.equals("AC-1")));
-    }
-
-    @Test
-    void linkTestCasesToPlannedCoverage_avoids_duplicate_test_case_updates() {
-        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-        TestEvidenceJdbcAdapter adapter = new TestEvidenceJdbcAdapter(jdbc);
-
-        when(jdbc.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
-
-        UUID ticketId = UUID.fromString("00000000-0000-0000-0000-00000000c107");
-        adapter.linkTestCasesToPlannedCoverage(ticketId);
-
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).update(sqlCaptor.capture(), any(MapSqlParameterSource.class));
-        assertTrue(sqlCaptor.getValue().contains("NOT EXISTS"));
     }
 
     @Test

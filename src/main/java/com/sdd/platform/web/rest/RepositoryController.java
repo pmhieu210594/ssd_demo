@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.RepositoryService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.RepositoryDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,7 +46,7 @@ public class RepositoryController {
 
     @PostMapping
     public ResponseEntity<RepositoryDtos.RepositoryDto> create(
-            @Valid @RequestBody RepositoryDtos.CreateRepositoryRequest request,
+            @RequestBody RepositoryDtos.CreateRepositoryRequest request,
             @CurrentUser AppUser caller
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(RepositoryDtos.RepositoryDto.from(service.create(
@@ -63,7 +62,7 @@ public class RepositoryController {
     @PutMapping("/{id}")
     public RepositoryDtos.RepositoryDto update(
             @PathVariable UUID id,
-            @Valid @RequestBody RepositoryDtos.UpdateRepositoryRequest request,
+            @RequestBody RepositoryDtos.UpdateRepositoryRequest request,
             @CurrentUser AppUser caller
     ) {
         return RepositoryDtos.RepositoryDto.from(service.update(

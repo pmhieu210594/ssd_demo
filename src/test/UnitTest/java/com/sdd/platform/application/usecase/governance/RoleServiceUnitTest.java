@@ -35,37 +35,21 @@ class RoleServiceUnitTest {
     @BeforeEach
     void setUp() {
         repository = Mockito.mock(RoleRepositoryPort.class);
-        service = new RoleService(repository, Mockito.mock(AdminAuditLogService.class));
+        service = new RoleService(repository);
         admin = user(AppUser.Role.ADMIN, "admin@example.com");
         editor = user(AppUser.Role.EDITOR, "editor@example.com");
         viewer = user(AppUser.Role.VIEWER, "viewer@example.com");
     }
 
     @Test
-    void list_allowsViewerAndNormalizesSearchAndStatus() {
+    void list_allowsViewerAndNormalizesSearchAndSort() {
         Role role = role(UUID.randomUUID(), "PM");
-        when(repository.findActive(eq("pm"), eq("DELETED"))).thenReturn(List.of(role));
+        when(repository.findActive(eq("pm"), eq("roleNameDesc"))).thenReturn(List.of(role));
 
-        List<Role> result = service.list(" pm ", "deleted", viewer);
+        List<Role> result = service.list(" pm ", "-roleName", viewer);
 
         assertThat(result).containsExactly(role);
-        verify(repository).findActive("pm", "DELETED");
-    }
-
-    @Test
-    void list_defaultsStatusToActiveWhenBlank() {
-        when(repository.findActive(eq("pm"), eq("ACTIVE"))).thenReturn(List.of());
-
-        service.list(" pm ", "", viewer);
-
-        verify(repository).findActive("pm", "ACTIVE");
-    }
-
-    @Test
-    void list_rejectsInvalidStatus() {
-        assertThatThrownBy(() -> service.list(null, "bogus", viewer))
-                .isInstanceOf(BusinessRuleException.class)
-                .hasMessage("Pages.RoleManagement.Status.Invalid");
+        verify(repository).findActive("pm", "roleNameDesc");
     }
 
     @Test
@@ -77,7 +61,6 @@ class RoleServiceUnitTest {
         assertThat(created.getRoleName()).isEqualTo("PM");
         assertThat(created.getDescription()).isEqualTo("Description");
         assertThat(created.getCreatedBy()).isEqualTo("editor@example.com");
-        assertThat(created.getStatus()).isEqualTo(Role.RoleStatus.ACTIVE);
         verify(repository).existsActiveName("PM", null);
     }
 

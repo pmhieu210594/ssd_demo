@@ -30,6 +30,7 @@ class EvidenceQualityScoreControllerTest {
         EvidenceQualityScoreDtos.EvidenceQualityScoreResponseDto dto = controller.getLatest(ticketId.toString());
 
         assertEquals(ticketId, dto.ticketId());
+        assertEquals("Excellent", dto.band());
         assertEquals(1, dto.breakdown().size());
         verify(service).latest(ticketId);
     }
@@ -51,6 +52,7 @@ class EvidenceQualityScoreControllerTest {
                         "tester@example.com"));
 
         assertEquals(ticketId, dto.ticketId());
+        assertEquals("Excellent", dto.band());
         verify(service).recalculateFromCi(ticketId, "v0", "tester@example.com");
     }
 
@@ -72,6 +74,7 @@ class EvidenceQualityScoreControllerTest {
                         "parser@example.com"));
 
         assertEquals(ticketId, dto.ticketId());
+        assertEquals("Excellent", dto.band());
         verify(service).recalculateFromParser(ticketId, "v0", "parser@example.com");
     }
 
@@ -81,6 +84,7 @@ class EvidenceQualityScoreControllerTest {
                 UUID.fromString("00000000-0000-0000-0000-00000000ca02"),
                 ticketId,
                 new BigDecimal("100.00"),
+                "Excellent",
                 List.of(new ScoreCriterion("c1", "criterion", new BigDecimal("10.00"), new BigDecimal("10.00"), "complete", List.of("ref"))),
                 List.of(),
                 List.of(),

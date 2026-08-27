@@ -1,6 +1,7 @@
 package com.sdd.platform.application.usecase.docparse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdd.platform.application.port.out.persistence.AcCoveragePort;
 import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.DocParsePersistencePort;
 import com.sdd.platform.application.port.out.persistence.TestEvidencePersistencePort;
@@ -36,6 +37,7 @@ class TestResultsParseServiceTest {
 
     private TestResultsParseService service;
     private InMemoryDocParsePersistencePort repository;
+    private AcCoveragePort acCoveragePort;
     private TestEvidencePersistencePort testEvidencePersistencePort;
     private CiRunRepositoryPort ciRunRepositoryPort;
     private UUID projectId;
@@ -48,6 +50,8 @@ class TestResultsParseServiceTest {
         repositoryId = UUID.randomUUID();
         ticketId = UUID.randomUUID();
         repository = new InMemoryDocParsePersistencePort();
+        acCoveragePort = Mockito.mock(AcCoveragePort.class);
+        Mockito.when(acCoveragePort.findActiveAcKeys(Mockito.any())).thenReturn(List.of());
         testEvidencePersistencePort = Mockito.mock(TestEvidencePersistencePort.class);
         Mockito.when(testEvidencePersistencePort.upsertTestRun(Mockito.any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -60,6 +64,8 @@ class TestResultsParseServiceTest {
                 new ArtifactNormalizer(),
                 repository,
                 new ObjectMapper(),
+                new TestCoverageValidationService(),
+                acCoveragePort,
                 testEvidencePersistencePort,
                 ciRunRepositoryPort);
     }
@@ -100,6 +106,17 @@ class TestResultsParseServiceTest {
 
         assertEquals(ParseStatus.PARTIAL, result.parseStatus());
         assertTrue(result.warnings().stream().anyMatch(w -> w.contains("duplicate")));
+    }
+
+    @Test
+    void parse_coverage_uses_pass_list_only_not_summary_or_fail_sections() {
+        Mockito.when(acCoveragePort.findActiveAcKeys(Mockito.any()))
+                .thenReturn(List.of("AC-1"));
+
+        ParseResult result = service.parseAndStore(request(markdownWithAcOnlyOutsidePasses()));
+
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("AC_NOT_COVERED:AC-1")));
     }
 
     @Test
@@ -169,18 +186,13 @@ class TestResultsParseServiceTest {
         TestEvidencePersistencePort.TestCaseResultRecord skipped = records.stream()
                 .filter(r -> "TC-3".equals(r.testCaseKey())).findFirst().orElseThrow();
         assertEquals("SKIPPED", skipped.status());
-
-        Mockito.verify(testEvidencePersistencePort).updateExecutedCoverageFromJunction(
-                Mockito.eq(ticketId),
-                Mockito.any(),
-                Mockito.any());
     }
 
     private ParseRequest request(String sourceText) {
         return new ParseRequest(
                 projectId, repositoryId, ticketId, ParseMode.DRAFT,
                 "docs/changes/PARSE-TEST-PLAN-RESULTS/test-results.md",
-                sourceText, "test-results-parser", "v1", "trace-1", "NOT_APPLICABLE", null, null);
+                sourceText, "test-results-parser", "v1", "trace-1", "NOT_APPLICABLE");
     }
 
     private String fullMarkdown() {
@@ -252,6 +264,50 @@ class TestResultsParseServiceTest {
                 """);
     }
 
+    private String markdownWithAcOnlyOutsidePasses() {
+        return """
+                # Test Results
+
+                ## 1. Execution Environment
+                | item | value |
+                |---|---|
+                | env | local |
+
+                ## 2. Executed Command
+                | command | result | log/evidence | note |
+                |---|---|---|---|
+                | mvn test | PASS | console | unit only |
+
+                ## 3. Summary of Results
+                AC-1 is mentioned here, but this section must not count for coverage.
+
+                ## 4. List of Passes
+                | test | result | note |
+                |---|---|---|
+                | parse_success | PASS | |
+
+                ## 5. List of Fails
+                | test | cause | action | status |
+                |---|---|---|---|
+                | parse_coverage | missing AC-1 | update matrix | FAIL |
+
+                ## 6. Bugs Fixed
+                None.
+
+                ## 7. Not yet fixed / Pending
+                None.
+
+                ## 8. Test cannot be executed and reason
+                None.
+
+                ## 9. Remaining risk
+                None.
+
+                ## 10. Final Test Verdict
+                PASS
+                """;
+    }
+
     private String markdownWithTcIds() {
         return """
                 # Test Results
@@ -317,7 +373,7 @@ class TestResultsParseServiceTest {
                     snapshot.parseMode(), snapshot.parseStatus(), snapshot.sourcePath(),
                     snapshot.contentHash(), snapshot.schemaVersion(), snapshot.schemaValid(),
                     snapshot.templateEmptyFlag(), snapshot.requiredFieldsMissing(),
-                    snapshot.parsedSummaryJson(), snapshot.parserVersion(), null, null,
+                    snapshot.parsedSummaryJson(), snapshot.parserVersion(),
                     snapshot.collectedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC) : snapshot.collectedAt());
             snapshotsByKey.put(key, saved);
             snapshotsById.put(snapshotId, saved);

@@ -3,6 +3,7 @@ package com.sdd.platform.application.usecase.docparse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.DocParsePersistencePort;
+import com.sdd.platform.application.port.out.persistence.AcCoveragePort;
 import com.sdd.platform.application.port.out.persistence.TestEvidencePersistencePort;
 import com.sdd.platform.application.usecase.docparse.DocParseModels.FieldSpec;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels;
@@ -27,7 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -39,6 +39,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -54,6 +55,7 @@ public class TestResultsParseService {
     public static final String DOCUMENT_TYPE = "TEST_RESULTS";
     public static final String DEFAULT_PARSER_NAME = "test-results-parser";
     public static final String DEFAULT_PARSER_VERSION = "v1";
+    public static final String SCHEMA_VERSION = "TEST_RESULTS_V1";
     public static final String SECTION_TYPE = "test-results";
 
     private List<String> validateStructure(String sourceText) {
@@ -106,6 +108,8 @@ public class TestResultsParseService {
     private final ArtifactNormalizer artifactNormalizer;
     private final DocParsePersistencePort persistence;
     private final ObjectMapper objectMapper;
+    private final TestCoverageValidationService coverageValidationService;
+    private final AcCoveragePort acCoveragePort;
     private final TestEvidencePersistencePort testEvidencePersistencePort;
     private final CiRunRepositoryPort ciRunRepositoryPort;
     private final EvidenceQualityScoreService evidenceQualityScoreService;
@@ -114,12 +118,16 @@ public class TestResultsParseService {
     public TestResultsParseService(ArtifactNormalizer artifactNormalizer,
             @Qualifier("testResultsDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             TestEvidencePersistencePort testEvidencePersistencePort,
             CiRunRepositoryPort ciRunRepositoryPort,
             EvidenceQualityScoreService evidenceQualityScoreService) {
         this.artifactNormalizer = artifactNormalizer;
         this.persistence = persistence;
         this.objectMapper = objectMapper;
+        this.coverageValidationService = coverageValidationService;
+        this.acCoveragePort = acCoveragePort;
         this.testEvidencePersistencePort = testEvidencePersistencePort;
         this.ciRunRepositoryPort = ciRunRepositoryPort;
         this.evidenceQualityScoreService = evidenceQualityScoreService;
@@ -128,16 +136,21 @@ public class TestResultsParseService {
     public TestResultsParseService(ArtifactNormalizer artifactNormalizer,
             @Qualifier("testResultsDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             CiRunRepositoryPort ciRunRepositoryPort) {
-        this(artifactNormalizer, persistence, objectMapper, null, ciRunRepositoryPort, null);
+        this(artifactNormalizer, persistence, objectMapper, coverageValidationService, acCoveragePort, null, ciRunRepositoryPort, null);
     }
 
     public TestResultsParseService(ArtifactNormalizer artifactNormalizer,
             @Qualifier("testResultsDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             TestEvidencePersistencePort testEvidencePersistencePort,
             CiRunRepositoryPort ciRunRepositoryPort) {
-        this(artifactNormalizer, persistence, objectMapper, testEvidencePersistencePort, ciRunRepositoryPort, null);
+        this(artifactNormalizer, persistence, objectMapper, coverageValidationService, acCoveragePort,
+                testEvidencePersistencePort, ciRunRepositoryPort, null);
     }
 
     @Transactional
@@ -146,13 +159,29 @@ public class TestResultsParseService {
                 request.repositoryId(), request.ticketId(), request.parseMode(),
                 request.sourcePath(), request.traceId());
         ParseResult parsed = parse(request);
+        List<String> specPackAcKeys = acCoveragePort.findActiveAcKeys(request.ticketId());
+        if (!specPackAcKeys.isEmpty()) {
+            List<String> resultAcIds = extractAcIds(parsed.fieldValues().get("list_of_passes"));
+            List<String> coverageWarnings = coverageValidationService.validateCoverage(specPackAcKeys, resultAcIds);
+            if (!coverageWarnings.isEmpty()) {
+                List<String> mergedWarnings = new ArrayList<>(parsed.warnings());
+                mergedWarnings.addAll(coverageWarnings);
+                ParseStatus newStatus = parsed.parseStatus() == ParseStatus.SUCCESS
+                        ? ParseStatus.PARTIAL
+                        : parsed.parseStatus();
+                parsed = new ParseResult(null, parsed.fields(), newStatus, parsed.missingFields(),
+                        mergedWarnings, parsed.sourceHash(), parsed.fieldValues());
+            }
+        }
         ParseSnapshot snapshot = persistence.upsertSnapshot(buildSnapshot(request, parsed));
         List<ParseField> sections = buildSections(snapshot.artifactSnapshotId(), request.ticketId(), parsed);
         persistence.replaceSections(snapshot.artifactSnapshotId(), request.ticketId(), sections);
         persistTestRun(snapshot, request, parsed);
         persistence.persistEvidenceEvent(buildEvidenceEvent(request, snapshot, parsed));
         ParseDataQuality quality = buildDataQuality(request, snapshot, parsed);
-        persistence.persistDataQuality(quality);
+        if (quality.missingCount() > 0 || quality.parseErrorCount() > 0 || quality.schemaViolationCount() > 0) {
+            persistence.persistDataQuality(quality);
+        }
         if (evidenceQualityScoreService != null && request.ticketId() != null) {
             evidenceQualityScoreService.recalculateFromParser(request.ticketId(), null, request.traceId());
         }
@@ -264,17 +293,14 @@ public class TestResultsParseService {
 
     private ParseSnapshot buildSnapshot(ParseRequest request, ParseResult parsed) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        ParseSnapshot previousSnapshot = persistence.findLatestSnapshot(request.ticketId(), DOCUMENT_TYPE,
-                request.parseMode()).orElse(null);
-        Integer schemaVersion = resolveSchemaVersion(previousSnapshot, parsed.sourceHash());
         return new ParseSnapshot(null, request.ticketId(), request.repositoryId(),
                 null, null, DOCUMENT_TYPE, "Test Results",
                 request.parseMode().name(), parsed.parseStatus().name(),
-                request.sourcePath(), parsed.sourceHash(), schemaVersion,
+                request.sourcePath(), parsed.sourceHash(), SCHEMA_VERSION,
                 parsed.parseStatus() == ParseStatus.SUCCESS,
                 request.sourceText() != null && request.sourceText().isBlank(),
                 parsed.missingFields(), buildParsedSummaryJson(request, parsed),
-                request.parserVersion(), request.connectorRunId(), request.sourceUpdatedAt(), now);
+                request.parserVersion(), now);
     }
 
     private List<ParseField> buildSections(UUID snapshotId, UUID ticketId, ParseResult parsed) {
@@ -367,34 +393,28 @@ public class TestResultsParseService {
                 .filter(key -> FIELD_SPECS.stream().filter(FieldSpec::required).anyMatch(s -> s.fieldKey().equals(key)))
                 .count();
         int parseErrorCount = parsed.parseStatus() == ParseStatus.PARSE_ERROR ? 1 : 0;
+        List<String> coverageViolations = parsed.warnings().stream()
+                .filter(w -> w.startsWith("AC_NOT_COVERED:") || w.startsWith("UNKNOWN_AC_REFERENCE:"))
+                .toList();
         int schemaViolationCount = (int) parsed.warnings().stream()
                 .filter(w -> w.contains(":duplicate") || w.contains(":invalid_order"))
-                .count();
+                .count() + coverageViolations.size();
         List<String> errorParts = new ArrayList<>();
         if (parseErrorCount > 0) errorParts.add("parse_error");
         errorParts.addAll(parsed.missingFields());
+        errorParts.addAll(coverageViolations);
         String errorSummary = errorParts.isEmpty() ? null : String.join("; ", errorParts);
         return new ParseDataQuality(
                 request.projectId(),
                 request.repositoryId(),
-                request.connectorRunId(),
                 DOCUMENT_TYPE + "_PARSE",
                 snapshot.sourcePath(),
                 missingCount,
                 parseErrorCount,
                 schemaViolationCount,
-                calculateFreshnessDelayMinutes(snapshot.sourceUpdatedAt()),
                 errorSummary,
                 OffsetDateTime.now(ZoneOffset.UTC)
         );
-    }
-
-    private Integer calculateFreshnessDelayMinutes(OffsetDateTime sourceUpdatedAt) {
-        if (sourceUpdatedAt == null) {
-            return null;
-        }
-        long minutes = Duration.between(sourceUpdatedAt, OffsetDateTime.now(ZoneOffset.UTC)).toMinutes();
-        return (int) Math.max(minutes, 0L);
     }
 
     private String toJson(Object value) {
@@ -411,9 +431,6 @@ public class TestResultsParseService {
         summary.put("parseMode", request.parseMode().name());
         summary.put("parseStatus", parsed.parseStatus().name());
         summary.put("sourceHash", parsed.sourceHash());
-        summary.put("schemaVersion", resolveSchemaVersion(
-                persistence.findLatestSnapshot(request.ticketId(), DOCUMENT_TYPE, request.parseMode()).orElse(null),
-                parsed.sourceHash()));
         summary.put("parserName", request.parserName());
         summary.put("parserVersion", request.parserVersion());
         summary.put("traceId", request.traceId());
@@ -432,19 +449,6 @@ public class TestResultsParseService {
         }
     }
 
-    private Integer resolveSchemaVersion(ParseSnapshot previousSnapshot, String sourceHash) {
-        if (sourceHash == null || sourceHash.isBlank()) {
-            return null;
-        }
-        if (previousSnapshot == null || previousSnapshot.schemaVersion() == null) {
-            return 1;
-        }
-        if (sourceHash.equals(previousSnapshot.contentHash())) {
-            return previousSnapshot.schemaVersion();
-        }
-        return previousSnapshot.schemaVersion() + 1;
-    }
-
     private Optional<CiRunMetadataView> resolveCiRunMetadata(ParseRequest request) {
         if (request == null || request.repositoryId() == null || request.ticketId() == null) {
             return Optional.empty();
@@ -460,9 +464,9 @@ public class TestResultsParseService {
         target.put("ciRunId", view.ciRunId() == null ? null : view.ciRunId().toString());
         target.put("ciProvider", view.ciProvider());
         target.put("workflowName", view.workflowName());
-        target.put("jobName", null);
+        target.put("jobName", view.jobName());
         target.put("externalRunId", view.externalRunId());
-        target.put("externalJobId", null);
+        target.put("externalJobId", view.externalJobId());
         target.put("ciUrl", view.ciUrl());
         target.put("ciStatus", view.status());
         target.put("startedAt", view.startedAt() == null ? null : view.startedAt().toString());
@@ -524,6 +528,23 @@ public class TestResultsParseService {
                 .anyMatch(p -> p.matcher(value).find());
     }
 
+    private List<String> extractAcIds(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+
+        Pattern pattern = Pattern.compile("\\bAC-[A-Za-z0-9_-]+\\b");
+        List<String> ids = new ArrayList<>();
+        Matcher matcher = pattern.matcher(value);
+        while (matcher.find()) {
+            ids.add(matcher.group());
+        }
+
+        return ids.stream()
+                .distinct()
+                .toList();
+    }
+
     private void persistTestRun(ParseSnapshot snapshot, ParseRequest request, ParseResult parsed) {
         if (testEvidencePersistencePort == null || snapshot == null || request == null || parsed == null) {
             return;
@@ -566,8 +587,6 @@ public class TestResultsParseService {
                 buildTestCaseResults(request.ticketId(), parsed, savedRun.testRunId());
         if (!results.isEmpty()) {
             testEvidencePersistencePort.updateTestCaseResults(results);
-            testEvidencePersistencePort.updateExecutedCoverageFromJunction(
-                    request.ticketId(), savedRun.testRunId(), snapshot.artifactSnapshotId());
         }
     }
 

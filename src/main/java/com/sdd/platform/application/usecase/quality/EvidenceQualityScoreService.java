@@ -1,16 +1,21 @@
 package com.sdd.platform.application.usecase.quality;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdd.platform.application.exception.ForbiddenException;
 import com.sdd.platform.application.port.out.persistence.EvidenceQualityScoreRepositoryPort;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ArtifactSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.CiSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.LineageEntry;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ReviewSignal;
+import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreBand;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
+import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreRequest;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.SourceSnapshot;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TestSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TraceabilitySignal;
+import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -39,8 +44,7 @@ import java.util.regex.Pattern;
 public class EvidenceQualityScoreService {
 
     private static final Logger log = LoggerFactory.getLogger(EvidenceQualityScoreService.class);
-    private static final Pattern UUID_PATTERN = Pattern
-            .compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    private static final Pattern UUID_PATTERN = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal MAX_SPEC = BigDecimal.valueOf(15);
@@ -51,24 +55,23 @@ public class EvidenceQualityScoreService {
     private static final BigDecimal MAX_CI = BigDecimal.valueOf(5);
     private static final BigDecimal MAX_BLACKBOX = BigDecimal.valueOf(5);
     private static final BigDecimal MAX_REPORT = BigDecimal.valueOf(10);
-    private static final BigDecimal MAX_REPORT_BASE = BigDecimal.ONE;
+    private static final BigDecimal MAX_REPORT_PRESENCE = BigDecimal.valueOf(2);
+    private static final BigDecimal MAX_REPORT_CONTENT = BigDecimal.valueOf(8);
     private static final List<String> REPORT_SECTION_KEYS = List.of(
             "EDITED_SUMMARY",
             "SCOPE_OF_INFLUENCE",
             "REVIEW_RESULTS",
             "TEST_RESULTS",
             "ACCEPTED_RISK",
-            "OPEN_ISSUES");
+            "OPEN_ISSUES"
+    );
 
     private final EvidenceQualityScoreRepositoryPort repositoryPort;
     private final ObjectMapper objectMapper;
-    private final ScoreThresholdConfigService scoreThresholdConfigService;
 
-    public EvidenceQualityScoreService(EvidenceQualityScoreRepositoryPort repositoryPort, ObjectMapper objectMapper,
-            ScoreThresholdConfigService scoreThresholdConfigService) {
+    public EvidenceQualityScoreService(EvidenceQualityScoreRepositoryPort repositoryPort, ObjectMapper objectMapper) {
         this.repositoryPort = repositoryPort;
         this.objectMapper = objectMapper;
-        this.scoreThresholdConfigService = scoreThresholdConfigService;
     }
 
     @Transactional(readOnly = true)
@@ -92,13 +95,11 @@ public class EvidenceQualityScoreService {
 
     @Transactional
     public ScoreResult recalculateFromParser(UUID ticketId, String scoreRuleVersion, String requestedBy) {
-        log.info(
-                "Evidence quality score recalculation requested mode=partial ticketId={} ruleVersion={} requestedBy={}",
+        log.info("Evidence quality score recalculation requested mode=partial ticketId={} ruleVersion={} requestedBy={}",
                 ticketId, normalizeRuleVersion(scoreRuleVersion), normalizeActor(requestedBy));
         ScoreResult result = recalculate(ticketId, scoreRuleVersion, requestedBy, true, "partial");
-        log.info(
-                "Evidence quality score recalculation finished mode=partial ticketId={} score={} snapshotState={} calculatedAt={}",
-                ticketId, result.score(), result.snapshotState(), result.calculatedAt());
+        log.info("Evidence quality score recalculation finished mode=partial ticketId={} score={} band={} snapshotState={} calculatedAt={}",
+                ticketId, result.score(), result.band(), result.snapshotState(), result.calculatedAt());
         return result;
     }
 
@@ -107,21 +108,18 @@ public class EvidenceQualityScoreService {
         log.info("Evidence quality score recalculation requested mode=final ticketId={} ruleVersion={} requestedBy={}",
                 ticketId, normalizeRuleVersion(scoreRuleVersion), normalizeActor(requestedBy));
         ScoreResult result = recalculate(ticketId, scoreRuleVersion, requestedBy, true, "final");
-        log.info(
-                "Evidence quality score recalculation finished mode=final ticketId={} score={} snapshotState={} calculatedAt={}",
-                ticketId, result.score(), result.snapshotState(), result.calculatedAt());
+        log.info("Evidence quality score recalculation finished mode=final ticketId={} score={} band={} snapshotState={} calculatedAt={}",
+                ticketId, result.score(), result.band(), result.snapshotState(), result.calculatedAt());
         return result;
     }
 
     @Transactional
     public ScoreResult recalculateFromSourceChange(UUID ticketId, String scoreRuleVersion, String requestedBy) {
-        log.info(
-                "Evidence quality score recalculation requested mode=source-change ticketId={} ruleVersion={} requestedBy={}",
+        log.info("Evidence quality score recalculation requested mode=source-change ticketId={} ruleVersion={} requestedBy={}",
                 ticketId, normalizeRuleVersion(scoreRuleVersion), normalizeActor(requestedBy));
         ScoreResult result = recalculate(ticketId, scoreRuleVersion, requestedBy, false, null);
-        log.info(
-                "Evidence quality score recalculation finished mode=source-change ticketId={} score={} snapshotState={} calculatedAt={}",
-                ticketId, result.score(), result.snapshotState(), result.calculatedAt());
+        log.info("Evidence quality score recalculation finished mode=source-change ticketId={} score={} band={} snapshotState={} calculatedAt={}",
+                ticketId, result.score(), result.band(), result.snapshotState(), result.calculatedAt());
         return result;
     }
 
@@ -138,21 +136,18 @@ public class EvidenceQualityScoreService {
     }
 
     @Transactional
-    public ScoreResult recalculate(String ticketId, String scoreRuleVersion, String requestedBy,
-            boolean forceRecalculate) {
+    public ScoreResult recalculate(String ticketId, String scoreRuleVersion, String requestedBy, boolean forceRecalculate) {
         UUID parsedTicketId = parseTicketId(ticketId);
         return recalculateFromCi(parsedTicketId, scoreRuleVersion, requestedBy);
     }
 
     @Transactional
-    public ScoreResult recalculate(UUID ticketId, String scoreRuleVersion, String requestedBy,
-            boolean forceRecalculate) {
+    public ScoreResult recalculate(UUID ticketId, String scoreRuleVersion, String requestedBy, boolean forceRecalculate) {
         return recalculate(ticketId, scoreRuleVersion, requestedBy, forceRecalculate, "final");
     }
 
     @Transactional
-    private ScoreResult recalculate(UUID ticketId, String scoreRuleVersion, String requestedBy,
-            boolean forceRecalculate, String snapshotStateOverride) {
+    private ScoreResult recalculate(UUID ticketId, String scoreRuleVersion, String requestedBy, boolean forceRecalculate, String snapshotStateOverride) {
         validateTicketId(ticketId);
         String ruleVersion = normalizeRuleVersion(scoreRuleVersion);
         SourceSnapshot sourceSnapshot = repositoryPort.loadSourceSnapshot(ticketId);
@@ -195,8 +190,7 @@ public class EvidenceQualityScoreService {
                 "spec-pack.md exists and has numbered ACs",
                 MAX_SPEC,
                 source.specPack() != null && source.specPack().isPresent(),
-                scoreByRatio(source.specPack() == null ? 0 : positive(source.specPack().acValidFormatCount()),
-                        source.specPack() == null ? 0 : positive(source.specPack().acCount()), MAX_SPEC),
+                scoreByRatio(source.specPack() == null ? 0 : positive(source.specPack().acValidFormatCount()), source.specPack() == null ? 0 : positive(source.specPack().acCount()), MAX_SPEC),
                 sourceRefs(source.specPack()));
         appendCriterion(breakdown, missing, lineage, specACs, source.specPack(), "tbl_fact_artifact_snapshot");
 
@@ -204,8 +198,7 @@ public class EvidenceQualityScoreService {
                 "spec_pack_scope",
                 "spec-pack.md contains Scope child sections, Open Issues, and Risk controls",
                 BigDecimal.TEN,
-                hasAnySection(source.specPack(), "SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE", "OPEN_ISSUES",
-                        "SECURITY_PRIVACY_IMPACT", "OPERATION_MAINTENANCE_IMPACT"),
+                hasAnySection(source.specPack(), "SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE", "OPEN_ISSUES", "SECURITY_PRIVACY_IMPACT", "OPERATION_MAINTENANCE_IMPACT"),
                 scoreSpecPackScope(source.specPack()),
                 sourceRefs(source.specPack()));
         appendCriterion(breakdown, missing, lineage, specScope, source.specPack(), "tbl_fact_artifact_parsed_section");
@@ -214,8 +207,7 @@ public class EvidenceQualityScoreService {
                 "impl_plan_impact_rollback_ac",
                 "impl-plan.md contains impact scope, rollback, and AC mapping",
                 MAX_PLAN,
-                hasAnySection(source.implPlan(), "IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN",
-                        "MIGRATION_ROLLBACK_POLICY", "CORRESPONDING_AC_TABLE", "STEP_IMPLEMENTATION"),
+                hasAnySection(source.implPlan(), "IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY", "CORRESPONDING_AC_TABLE", "STEP_IMPLEMENTATION"),
                 scoreImplPlan(source.implPlan(), source.specPack()),
                 sourceRefs(source.implPlan()));
         appendCriterion(breakdown, missing, lineage, implPlan, source.implPlan(), "tbl_fact_artifact_parsed_section");
@@ -234,10 +226,9 @@ public class EvidenceQualityScoreService {
                 "review-checklist.md exists and covers security/test viewpoints",
                 BigDecimal.TEN,
                 source.reviewChecklist() != null && source.reviewChecklist().isPresent(),
-                scoreReviewChecklist(source.reviewChecklist()),
+                scoreArtifactPresence(source.reviewChecklist(), BigDecimal.TEN),
                 sourceRefs(source.reviewChecklist()));
-        appendCriterion(breakdown, missing, lineage, reviewChecklist, source.reviewChecklist(),
-                "tbl_fact_artifact_snapshot");
+        appendCriterion(breakdown, missing, lineage, reviewChecklist, source.reviewChecklist(), "tbl_fact_artifact_snapshot");
 
         ScoreCriterion selfReview = criterion(
                 "self_review_commands_results_concerns",
@@ -246,26 +237,22 @@ public class EvidenceQualityScoreService {
                 source.selfReview() != null && source.selfReview().isPresent(),
                 scoreSelfReview(source.selfReview()),
                 sourceRefs(source.selfReview()));
-        appendCriterion(breakdown, missing, lineage, selfReview, source.selfReview(),
-                "tbl_fact_artifact_parsed_section");
+        appendCriterion(breakdown, missing, lineage, selfReview, source.selfReview(), "tbl_fact_artifact_parsed_section");
 
         ScoreCriterion testLinkage = criterion(
                 "test_plan_results_ac_linkage",
                 "test-plan.md and test-results.md are linked to ACs",
                 MAX_TEST,
-                source.testPlan() != null && source.testPlan().isPresent() && source.testResults() != null
-                        && source.testResults().isPresent(),
+                source.testPlan() != null && source.testPlan().isPresent() && source.testResults() != null && source.testResults().isPresent(),
                 scoreTestLinkage(source),
                 mergeSourceRefs(source.testPlan(), source.testResults()));
-        appendCriterion(breakdown, missing, lineage, testLinkage, source.testPlan(),
-                "tbl_fact_artifact_parsed_section");
+        appendCriterion(breakdown, missing, lineage, testLinkage, source.testPlan(), "tbl_fact_artifact_parsed_section");
 
         ScoreCriterion ciLink = criterion(
                 "ci_link_present",
                 "CI run ID or CI link is present",
                 MAX_CI,
-                source.ci() != null && source.ci().present()
-                        && (notBlank(source.ci().ciUrl()) || notBlank(source.ci().externalRunId())),
+                source.ci() != null && source.ci().present() && (notBlank(source.ci().ciUrl()) || notBlank(source.ci().externalRunId())),
                 scoreCiLink(source.ci()),
                 source.ci() == null ? List.of() : source.ci().sourceRefs());
         appendCriterion(breakdown, missing, lineage, ciLink, source.ci(), "tbl_fact_ci_run");
@@ -277,8 +264,7 @@ public class EvidenceQualityScoreService {
                 source.blackboxTestcases() != null && source.blackboxTestcases().isPresent(),
                 scoreArtifactPresence(source.blackboxTestcases(), MAX_BLACKBOX),
                 sourceRefs(source.blackboxTestcases()));
-        appendCriterion(breakdown, missing, lineage, blackbox, source.blackboxTestcases(),
-                "tbl_fact_artifact_snapshot");
+        appendCriterion(breakdown, missing, lineage, blackbox, source.blackboxTestcases(), "tbl_fact_artifact_snapshot");
 
         ScoreCriterion report = criterion(
                 "report_overview_impact_review_test_risk_remaining",
@@ -301,20 +287,20 @@ public class EvidenceQualityScoreService {
         collectParseErrors(parseErrors, source);
         collectTraceIds(traceIds, source);
 
-        String band = scoreThresholdConfigService.lookupBand(total).label();
+        String band = ScoreBand.fromScore(total).displayName();
         String snapshotState = snapshotStateOverride == null || snapshotStateOverride.isBlank()
                 ? determineSnapshotState(source, parseErrors, missing)
                 : snapshotStateOverride;
-        OffsetDateTime calculatedAt = source.latestSourceAt() != null
-                && source.latestSourceAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))
-                        ? source.latestSourceAt()
-                        : OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime calculatedAt = source.latestSourceAt() != null && source.latestSourceAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))
+                ? source.latestSourceAt()
+                : OffsetDateTime.now(ZoneOffset.UTC);
 
         return new ScoreResult(
                 null,
                 null,
                 source.ticketId(),
                 total,
+                band,
                 breakdown,
                 dedupe(missing),
                 dedupe(parseErrors),
@@ -330,7 +316,8 @@ public class EvidenceQualityScoreService {
                 ciLink.score(),
                 blackbox.score(),
                 report.score(),
-                lineage);
+                lineage
+        );
     }
 
     private ScoreResult withSnapshotState(ScoreResult result, SourceSnapshot sourceSnapshot) {
@@ -346,6 +333,7 @@ public class EvidenceQualityScoreService {
                 result.metricValueId(),
                 result.ticketId(),
                 result.score(),
+                result.band(),
                 result.breakdown(),
                 result.missing(),
                 result.parseErrors(),
@@ -361,7 +349,8 @@ public class EvidenceQualityScoreService {
                 result.ciScore(),
                 result.blackboxScore(),
                 result.reportScore(),
-                result.lineage());
+                result.lineage()
+        );
     }
 
     private String determineReadState(ScoreResult result, SourceSnapshot source) {
@@ -371,8 +360,7 @@ public class EvidenceQualityScoreService {
         if (source == null) {
             return result.snapshotState();
         }
-        if (source.latestSourceAt() != null && result.calculatedAt() != null
-                && source.latestSourceAt().isAfter(result.calculatedAt())) {
+        if (source.latestSourceAt() != null && result.calculatedAt() != null && source.latestSourceAt().isAfter(result.calculatedAt())) {
             return "stale";
         }
         return result.snapshotState();
@@ -390,11 +378,11 @@ public class EvidenceQualityScoreService {
     }
 
     private void appendCriterion(List<ScoreCriterion> breakdown,
-            List<String> missing,
-            List<LineageEntry> lineage,
-            ScoreCriterion criterion,
-            Object source,
-            String tableName) {
+                                 List<String> missing,
+                                 List<LineageEntry> lineage,
+                                 ScoreCriterion criterion,
+                                 Object source,
+                                 String tableName) {
         breakdown.add(criterion);
         if (criterion.score().compareTo(criterion.maxScore()) < 0) {
             missing.add(criterion.criterionId());
@@ -408,13 +396,11 @@ public class EvidenceQualityScoreService {
         }
     }
 
-    private ScoreCriterion criterion(String id, String label, BigDecimal maxScore, boolean complete, BigDecimal score,
-            List<String> sourceRefs) {
+    private ScoreCriterion criterion(String id, String label, BigDecimal maxScore, boolean complete, BigDecimal score, List<String> sourceRefs) {
         BigDecimal normalized = score.setScale(2, RoundingMode.HALF_UP);
         String status = normalized.compareTo(maxScore.setScale(2, RoundingMode.HALF_UP)) >= 0 ? "complete"
                 : normalized.compareTo(ZERO) > 0 ? "partial" : "missing";
-        return new ScoreCriterion(id, label, normalized, maxScore.setScale(2, RoundingMode.HALF_UP), status,
-                sourceRefs);
+        return new ScoreCriterion(id, label, normalized, maxScore.setScale(2, RoundingMode.HALF_UP), status, sourceRefs);
     }
 
     private BigDecimal scoreArtifactPresence(ArtifactSignal signal, BigDecimal maxScore) {
@@ -437,16 +423,14 @@ public class EvidenceQualityScoreService {
                 present++;
             }
         }
-        return maxScore.multiply(BigDecimal.valueOf((double) present / (double) sectionKeys.length)).setScale(2,
-                RoundingMode.HALF_UP);
+        return maxScore.multiply(BigDecimal.valueOf((double) present / (double) sectionKeys.length)).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal scoreImplPlan(ArtifactSignal implPlan, ArtifactSignal specPack) {
         if (implPlan == null || !implPlan.isPresent()) {
             return ZERO;
         }
-        BigDecimal score = scoreBySections(implPlan, BigDecimal.valueOf(8), "IMPLEMENTATION_PRINCIPLE",
-                "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY", "STEP_IMPLEMENTATION");
+        BigDecimal score = scoreBySections(implPlan, BigDecimal.valueOf(8), "IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY", "STEP_IMPLEMENTATION");
         if (hasCompleteCorrespondingAcMapping(implPlan, specPack)) {
             score = score.add(BigDecimal.valueOf(2));
         }
@@ -509,8 +493,7 @@ public class EvidenceQualityScoreService {
         if (signal == null || !signal.isPresent()) {
             return ZERO;
         }
-        return scoreBySections(signal, MAX_SELF_REVIEW, "RUN_COMMAND_AND_RESULTS", "UNPROCESSED_PENDING_ACCEPTED_RISK",
-                "FINAL_SELF_VERDICT");
+        return scoreBySections(signal, MAX_SELF_REVIEW, "RUN_COMMAND_AND_RESULTS", "UNPROCESSED_PENDING_ACCEPTED_RISK", "FINAL_SELF_VERDICT");
     }
 
     private BigDecimal scoreTestLinkage(SourceSnapshot source) {
@@ -540,102 +523,22 @@ public class EvidenceQualityScoreService {
         if (totalAcCount <= 0 || coveredAcCount < totalAcCount) {
             return false;
         }
-        return source.test().failedCount() <= 0;
+        return "SUCCESS".equalsIgnoreCase(source.test().status());
     }
 
     private BigDecimal scoreCiLink(CiSignal signal) {
-        // New rules:
-        // - no CI run (no row in tbl_fact_ci_run) -> 0
-        // - CI exists and latest run status indicates failure -> half score (2.5)
-        // - CI exists and latest run status not failure -> full score (5)
         if (signal == null || !signal.present()) {
             return ZERO;
         }
-        String status = signal.status();
-        if (status != null) {
-            String s = status.trim().toUpperCase(Locale.ROOT);
-            if (s.startsWith("FAIL")) {
-                return MAX_CI.divide(BigDecimal.valueOf(2)).setScale(2, RoundingMode.HALF_UP);
-            }
-            // any non-failure status yields full CI points
-            return MAX_CI.setScale(2, RoundingMode.HALF_UP);
-        }
-        // fallback: if status is missing but run is present, treat as half score
-        return MAX_CI.divide(BigDecimal.valueOf(2)).setScale(2, RoundingMode.HALF_UP);
+        return scoreByRatio(signal.linkedJobCount(), signal.jobCount(), MAX_CI);
     }
 
     private BigDecimal scoreReport(ArtifactSignal signal, SourceSnapshot source) {
         if (signal == null || !signal.isPresent()) {
             return ZERO;
         }
-        BigDecimal score = MAX_REPORT_BASE;
-        if (hasSectionContent(signal, "EDITED_SUMMARY")) {
-            score = score.add(BigDecimal.valueOf(2));
-        }
-        if (hasSectionContent(signal, "SCOPE_OF_INFLUENCE")) {
-            score = score.add(BigDecimal.valueOf(2));
-        }
-        if (hasSectionContent(signal, "REVIEW_RESULTS")) {
-            score = score.add(BigDecimal.valueOf(2));
-        }
-        if (hasSectionContent(signal, "TEST_RESULTS")) {
-            score = score.add(BigDecimal.valueOf(2));
-        }
-        if (hasSectionContent(signal, "OPEN_ISSUES")) {
-            score = score.add(BigDecimal.valueOf(1));
-        }
+        BigDecimal score = MAX_REPORT_PRESENCE.add(scoreBySections(signal, MAX_REPORT_CONTENT, REPORT_SECTION_KEYS.toArray(String[]::new)));
         return score.min(MAX_REPORT).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private boolean hasSectionContent(ArtifactSignal signal, String key) {
-        if (signal == null || !signal.isPresent()) {
-            return false;
-        }
-        if (hasAnySection(signal, key)) {
-            return true;
-        }
-        if (signal.parsedSummary() == null) {
-            return false;
-        }
-        Object value = signal.parsedSummary().get(key);
-        if (value instanceof String str) {
-            return !str.isBlank();
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return false;
-    }
-
-    private BigDecimal scoreReviewChecklist(ArtifactSignal signal) {
-        if (signal == null || !signal.isPresent()) {
-            return ZERO;
-        }
-        BigDecimal score = BigDecimal.valueOf(4);
-        if (isReviewChecklistChecked(signal, "security_review_checked")) {
-            score = score.add(BigDecimal.valueOf(3));
-        }
-        if (isReviewChecklistChecked(signal, "test_review_checked")) {
-            score = score.add(BigDecimal.valueOf(3));
-        }
-        return score.min(MAX_REVIEW).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private boolean isReviewChecklistChecked(ArtifactSignal signal, String key) {
-        if (signal == null || signal.parsedSummary() == null) {
-            return false;
-        }
-        Object value = signal.parsedSummary().get(key);
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof String stringValue) {
-            return Boolean.parseBoolean(stringValue.trim());
-        }
-        if (value instanceof Number number) {
-            return number.intValue() > 0;
-        }
-        return false;
     }
 
     private BigDecimal scoreSpecPackScope(ArtifactSignal signal) {

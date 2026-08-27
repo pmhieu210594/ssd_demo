@@ -49,19 +49,9 @@
 
 ## 6. Security/Privacy Review
 
-- [ ] {Security/Privacy Review}
-- [ ] {Security/Privacy Review}
-- [ ] {Security/Privacy Review}
-- [ ] {Security/Privacy Review}
-
 ## 7. Operation/Maintenance Review
 
 ## 8. Test Review
-
-- [ ] {Operation/Maintenance Review}
-- [ ] {Operation/Maintenance Review}
-- [ ] {Operation/Maintenance Review}
-- [ ] {Operation/Maintenance Review}
 
 ## 9. Documentation/Traceability Review
 

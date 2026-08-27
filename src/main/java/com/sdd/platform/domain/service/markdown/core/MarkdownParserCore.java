@@ -36,7 +36,7 @@ public class MarkdownParserCore {
     private static final Pattern HEADING_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+?)\\s*$");
     private static final Pattern TOP_META_PATTERN = Pattern.compile("^\\*\\*([^*]+)\\*\\*:\\s*(.+?)\\s*$");
     private static final Pattern PLACEHOLDER_BRACKET_PATTERN = Pattern.compile("^<[^>]*>$");
-    private static final Pattern TRAILING_NUMBERED_HEADING_PATTERN = Pattern.compile("^\\d+(?:\\.\\d+)*\\.?\\s+");
+    private static final Pattern TRAILING_NUMBERED_HEADING_PATTERN = Pattern.compile("^\\d+(?:\\.\\d+)*\\.\\s+");
     private static final List<String> PLACEHOLDER_TOKENS = List.of("---", "TBD", "TODO", "N/A", "-");
 
     private final Parser parser;
@@ -66,13 +66,11 @@ public class MarkdownParserCore {
         }
 
         if (sections.isEmpty() && !normalized.isBlank()) {
-            warnings.add(
-                    issue("section_missing", "No Markdown headings were detected", "warning", sourcePath, null, -1));
+            warnings.add(issue("section_missing", "No Markdown headings were detected", "warning", sourcePath, null, -1));
         }
 
         if (!frontMatter.isEmpty() && frontMatter.keySet().stream().anyMatch(key -> key.isBlank())) {
-            warnings.add(
-                    issue("front_matter_invalid", "Front matter contains blank keys", "warning", sourcePath, null, -1));
+            warnings.add(issue("front_matter_invalid", "Front matter contains blank keys", "warning", sourcePath, null, -1));
         }
 
         String hash = sha256(normalized);
@@ -86,7 +84,8 @@ public class MarkdownParserCore {
                 List.copyOf(tables),
                 List.copyOf(placeholders),
                 List.copyOf(warnings),
-                List.copyOf(errors));
+                List.copyOf(errors)
+        );
     }
 
     private Map<String, String> extractFrontMatter(String content) {
@@ -95,8 +94,7 @@ public class MarkdownParserCore {
         document.accept(visitor);
 
         Map<String, String> frontMatter = new LinkedHashMap<>();
-        visitor.getData()
-                .forEach((key, values) -> frontMatter.put(normalizeMetadataKey(key), String.join(", ", values)));
+        visitor.getData().forEach((key, values) -> frontMatter.put(normalizeMetadataKey(key), String.join(", ", values)));
         return frontMatter;
     }
 
@@ -135,7 +133,8 @@ public class MarkdownParserCore {
                         title,
                         canonicalSectionKey(title),
                         matcher.group(1).length(),
-                        i + 1);
+                        i + 1
+                );
             } else if (current != null) {
                 current.body.append(line).append('\n');
             }
@@ -197,11 +196,12 @@ public class MarkdownParserCore {
                 dataRows.stream()
                         .map(List::copyOf)
                         .collect(Collectors.toUnmodifiableList()),
-                startLine);
+                startLine
+        );
     }
 
     private List<MarkdownPlaceholder> detectPlaceholders(List<MarkdownSection> sections,
-            List<MarkdownTable> tables) {
+                                                         List<MarkdownTable> tables) {
         List<MarkdownPlaceholder> placeholders = new ArrayList<>();
 
         for (MarkdownSection section : sections) {
@@ -214,7 +214,8 @@ public class MarkdownParserCore {
                             "section",
                             section.canonicalKey(),
                             section.startLine() + i,
-                            true));
+                            true
+                    ));
                 }
             }
         }
@@ -233,7 +234,8 @@ public class MarkdownParserCore {
                                 "table:" + columnName,
                                 table.sectionKey(),
                                 table.startLine() + rowIndex + 1,
-                                true));
+                                true
+                        ));
                     }
                 }
             }
@@ -349,16 +351,15 @@ public class MarkdownParserCore {
     }
 
     private String canonicalSectionKey(String rawHeading) {
-        String normalized = rawHeading == null ? ""
-                : rawHeading
-                        .replace('–', '-')
-                        .replace('—', '-')
-                        .replace('/', ' ')
-                        .replace('-', ' ')
-                        .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit} ]+", " ")
-                        .toLowerCase(Locale.ROOT)
-                        .replaceAll("\\s+", " ")
-                        .trim();
+        String normalized = rawHeading == null ? "" : rawHeading
+                .replace('–', '-')
+                .replace('—', '-')
+                .replace('/', ' ')
+                .replace('-', ' ')
+                .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit} ]+", " ")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ")
+                .trim();
 
         return switch (normalized) {
             case "context purpose" -> "CONTEXT_PURPOSE";
@@ -408,11 +409,11 @@ public class MarkdownParserCore {
     }
 
     private MarkdownIssue issue(String code,
-            String message,
-            String severity,
-            String path,
-            String sectionKey,
-            int line) {
+                                String message,
+                                String severity,
+                                String path,
+                                String sectionKey,
+                                int line) {
         return new MarkdownIssue(code, message, severity, path, sectionKey, line);
     }
 
@@ -455,13 +456,15 @@ public class MarkdownParserCore {
             List<MarkdownTable> tables,
             List<MarkdownPlaceholder> placeholders,
             List<MarkdownIssue> warnings,
-            List<MarkdownIssue> errors) {
+            List<MarkdownIssue> errors
+    ) {
         public Map<String, String> sectionMap() {
             return sections.stream().collect(Collectors.toMap(
                     MarkdownSection::canonicalKey,
                     MarkdownSection::body,
                     (left, right) -> left,
-                    LinkedHashMap::new));
+                    LinkedHashMap::new
+            ));
         }
     }
 
@@ -471,24 +474,24 @@ public class MarkdownParserCore {
             int level,
             String body,
             int startLine,
-            int endLine) {
-    }
+            int endLine
+    ) {}
 
     public record MarkdownTable(
             String sectionKey,
             String sectionTitle,
             List<String> headers,
             List<List<String>> rows,
-            int startLine) {
-    }
+            int startLine
+    ) {}
 
     public record MarkdownPlaceholder(
             String value,
             String location,
             String sectionKey,
             int line,
-            boolean required) {
-    }
+            boolean required
+    ) {}
 
     public record MarkdownIssue(
             String code,
@@ -496,7 +499,8 @@ public class MarkdownParserCore {
             String severity,
             String path,
             String sectionKey,
-            int line) {
+            int line
+    ) {
         public boolean isError() {
             return "error".equalsIgnoreCase(severity);
         }

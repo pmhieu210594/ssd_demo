@@ -1,123 +1,202 @@
 package com.sdd.platform.domain.service;
 
-import com.sdd.platform.domain.service.markdown.reviewchecklist.ReviewChecklistMarkdownParser;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.sdd.platform.domain.service.markdown.reviewchecklist.ReviewChecklistMarkdownParser;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ReviewChecklistMarkdownParserTest {
+    private ReviewChecklistMarkdownParser parser;
 
-    private final ReviewChecklistMarkdownParser parser = new ReviewChecklistMarkdownParser();
-
-    @Test
-    void parse_validChecklist_coversCoreEnvelope() {
-        String markdown = """
-                # Review Checklist
-                **Ticket ID**: PARSER-REVIEW-CHECKLIST
-
-                ## SPEC_AC
-                core alignment verified
-
-                ## THIET_KE_PHU_THUOC
-                dependency design reviewed
-
-                ## BAO_MAT
-                security review items
-
-                ## HIEU_NANG
-                performance review items
-
-                ## TUONG_THICH
-                compatibility review items
-
-                ## LOGGING_AUDIT
-                logging and audit review items
-
-                ## XU_LY_LOI
-                error handling review items
-
-                ## KIEM_THU
-                test review items
-
-                ## VAN_HANH
-                operation review items
-
-                ## BANG_ANH_XA_AC_CHECKLIST_ITEMS
-                mapping reviewed
-                """;
-
-        var parsed = parser.parse(markdown, "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md", "official");
-
-        assertThat(parsed.ticketId()).isEqualTo("PARSER-REVIEW-CHECKLIST");
-        assertThat(parsed.parseMode()).isEqualTo("official");
-        assertThat(parsed.artifactExists()).isTrue();
-        assertThat(parsed.artifactStatus()).isEqualTo("present");
-        assertThat(parsed.errors()).isEmpty();
-        assertThat(parsed.parsedSummary()).containsEntry("ticket_id", "PARSER-REVIEW-CHECKLIST");
+    @BeforeEach
+    void setUp() {
+        parser = new ReviewChecklistMarkdownParser();
     }
 
     @Test
-    void parse_reviewChecklist_marksSectionsUnchecked_whenAnyCheckboxRemainsOpen() {
-        String markdown = """
-                # Review Checklist
-                **Ticket ID**: PARSER-REVIEW-CHECKLIST
+    void should_parse_success_with_full_data() {
+        String content = """
+            ---
+            ticket_id: TICKET-123
+            ---
+            
+            # Security Review
+            
+            - [ ] validate auth
+            - [x] check secret
+            
+            # Test
+            
+            - [ ] add unit test
+        """;
 
-                ## SECURITY_PRIVACY_REVIEW
-                - [X] No secrets are logged
-                - [ ] No PII is exposed
+        var result = parser.parse(content, "test.md", Map.of());
 
-                ## TEST_REVIEW
-                - [X] Boundary tests exist
-                - [V] Negative-path tests exist
-                """;
+        assertThat(result.getTicketId()).isEqualTo("TICKET-123");
+        assertThat(result.getChecklistItemCount()).isEqualTo(3);
 
-        var parsed = parser.parse(markdown, "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md", "official");
-        assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
+        assertThat(result.isHasSecurityPerspective()).isTrue();
+        assertThat(result.isHasTestPerspective()).isTrue();
+        assertThat(result.getPerspectiveCount()).isEqualTo(2);
+
+        assertThat(result.getParseStatus())
+                .isEqualTo(ReviewChecklistMarkdownParser.ParserResultStatus.SUCCESS);
+
+        assertThat(result.getWarnings()).isEmpty();
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(result.getArtifactType()).isEqualTo("review_checklist");
+        assertThat(result.getSourceHash()).isNotNull();
     }
 
     @Test
-    void parse_missingFields_generatesWarnings() {
-        String markdown = """
-                # Review Checklist
-                **Ticket ID**: PARSER-REVIEW-CHECKLIST
+    void should_fail_when_content_empty() {
+        var result = parser.parse("   ", "test.md", Map.of());
 
-                ## SPEC_AC
-                OK
-                """;
+        assertThat(result.getParseStatus())
+                .isEqualTo(ReviewChecklistMarkdownParser.ParserResultStatus.FAIL);
 
-        var parsed = parser.parse(markdown, "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md");
-
-        assertThat(parsed.requiredFieldsMissing()).isNotEmpty();
-        assertThat(parsed.warnings()).extracting(ReviewChecklistMarkdownParser.ParsingIssue::code).contains("required_fields_missing");
-        assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors()).contains("Empty content");
     }
 
     @Test
-    void parse_detectsPlaceholder() {
-        String markdown = """
-                # Review Checklist
-                **Ticket ID**: PARSER-REVIEW-CHECKLIST
+    void should_warning_when_no_checklist() {
+        String content = """
+            # Title
+            
+            Just text
+        """;
 
-                ## SPEC_AC
-                <TODO>
-                """;
+        var result = parser.parse(content, "test.md", Map.of());
 
-        var parsed = parser.parse(markdown, "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md");
-        assertThat(parsed.placeholders()).isNotEmpty();
-        assertThat(parsed.warnings()).extracting(ReviewChecklistMarkdownParser.ParsingIssue::code).contains("placeholder_detected");
+        assertThat(result.getChecklistItemCount()).isZero();
+
+        assertThat(result.getParseStatus())
+                .isEqualTo(ReviewChecklistMarkdownParser.ParserResultStatus.WARNING);
+
+        assertThat(result.getWarnings()).contains("No checklist items found");
     }
 
     @Test
-    void parse_ticketId_inferredFromPath_whenMissingInContent() {
-        var parsed = parser.parse("# Review Checklist\n## SPEC_AC\nOK", "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md");
-        assertThat(parsed.ticketId()).isEqualTo("PARSER-REVIEW-CHECKLIST");
+    void should_extract_ticket_from_metadata_param() {
+        String content = """
+            # Review
+            
+            - [ ] something
+        """;
+
+        var result = parser.parse(content, "test.md",
+                Map.of("ticket_id", "TICKET-999"));
+
+        assertThat(result.getTicketId()).isEqualTo("TICKET-999");
     }
 
     @Test
-    void parse_emptyContent_resultsInMissingArtifact() {
-        var parsed = parser.parse("", "docs/changes/PARSER-REVIEW-CHECKLIST/review-checklist.md");
-        assertThat(parsed.artifactExists()).isFalse();
-        assertThat(parsed.artifactStatus()).isEqualTo("missing");
+    void should_extract_ticket_from_content() {
+        String content = """
+            # Review
+            
+            Ref: TICKET-456
+            
+            - [ ] item
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.getTicketId()).isEqualTo("TICKET-456");
     }
+
+    @Test
+    void should_warning_when_missing_ticket() {
+        String content = """
+            # Review
+            
+            - [ ] item
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.getTicketId()).isNull();
+
+        assertThat(result.getParseStatus())
+                .isEqualTo(ReviewChecklistMarkdownParser.ParserResultStatus.WARNING);
+
+        assertThat(result.getWarnings()).contains("Missing ticket_id");
+    }
+
+    @Test
+    void should_count_checklist_variants() {
+        String content = """
+            - item 1
+            * item 2
+            - [ ] item 3
+            * [x] item 4
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.getChecklistItemCount()).isEqualTo(4);
+    }
+
+    @Test
+    void should_detect_all_perspectives() {
+        String content = """
+            # Security
+            check auth
+            
+            # Performance
+            reduce latency
+            
+            # Test
+            add qa test
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.isHasSecurityPerspective()).isTrue();
+        assertThat(result.isHasPerformancePerspective()).isTrue();
+        assertThat(result.isHasTestPerspective()).isTrue();
+        assertThat(result.getPerspectiveCount()).isEqualTo(3);
+    }
+
+    @Test
+    void should_detect_perspective_case_insensitive() {
+        String content = """
+            # SECURITY
+            
+            AUTH check
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.isHasSecurityPerspective()).isTrue();
+    }
+
+    @Test
+    void should_not_detect_any_perspective() {
+        String content = """
+            # General
+            
+            - [ ] do something
+        """;
+
+        var result = parser.parse(content, "test.md", Map.of());
+
+        assertThat(result.isHasSecurityPerspective()).isFalse();
+        assertThat(result.isHasTestPerspective()).isFalse();
+        assertThat(result.isHasPerformancePerspective()).isFalse();
+
+        assertThat(result.getPerspectiveCount()).isZero();
+
+        assertThat(result.getParseStatus())
+                .isEqualTo(ReviewChecklistMarkdownParser.ParserResultStatus.WARNING);
+
+        assertThat(result.getWarnings()).contains("No perspective detected");
+    }
+
+
 }
-

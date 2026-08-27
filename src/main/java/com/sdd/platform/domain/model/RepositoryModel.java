@@ -28,6 +28,6 @@ public class RepositoryModel {
         return deleteFlag || deletedAt != null || status == RepositoryStatus.DELETED;
     }
 
-    public enum HostType { GITHUB, LOCAL }
+    public enum HostType { GITHUB, GITLAB, LOCAL }
     public enum RepositoryStatus { ACTIVE, DELETED }
 }

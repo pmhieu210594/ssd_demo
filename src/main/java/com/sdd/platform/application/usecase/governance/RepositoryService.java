@@ -6,7 +6,6 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 import javax.crypto.Cipher;
@@ -33,12 +32,9 @@ public class RepositoryService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final String MODULE = "REPOSITORY";
-    private static final String ENTITY_TYPE = "REPOSITORY";
 
     private final RepositoryRepositoryPort repository;
     private final ProjectRepositoryPort projectRepository;
-    private final AdminAuditLogService adminAuditLogService;
 
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_IV_LENGTH = 12; // 12 bytes là độ dài tiêu chuẩn cho GCM
@@ -47,11 +43,9 @@ public class RepositoryService {
     @Value("${SECRET_KEY_STRING}")
     private String SECRET_KEY_STRING;
 
-    public RepositoryService(RepositoryRepositoryPort repository, ProjectRepositoryPort projectRepository,
-            AdminAuditLogService adminAuditLogService) {
+    public RepositoryService(RepositoryRepositoryPort repository, ProjectRepositoryPort projectRepository) {
         this.repository = repository;
         this.projectRepository = projectRepository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -90,99 +84,72 @@ public class RepositoryService {
     @Transactional
     public RepositoryModel create(UUID projectId, String repoNameMasked, String hostType, String defaultBranch, String repoUrlHash, AppUser caller) {
         requireAdmin(caller);
-        try {
-            RepositoryPayload payload = normalize(projectId, repoNameMasked, hostType, defaultBranch, repoUrlHash);
-            ensureProjectExists(payload.projectId());
-            ensureUniqueName(payload.projectId(), payload.repoNameMasked(), null);
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            RepositoryModel entity = RepositoryModel.builder()
-                    .repositoryId(UUID.randomUUID())
-                    .projectId(payload.projectId())
-                    .projectAlias(null)
-                    .repoNameMasked(payload.repoNameMasked())
-                    .hostType(RepositoryModel.HostType.valueOf(payload.hostType()))
-                    .defaultBranch(payload.defaultBranch())
-                    .repoUrlHash(encrypt(payload.repoUrlHash()))
-                    .status(RepositoryModel.RepositoryStatus.ACTIVE)
-                    .deleteFlag(false)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .build();
-            repository.insert(entity);
-            // Audit snapshot uses the still-encrypted entity, never the decrypted repo URL from get().
-            RepositoryModel created = repository.findById(entity.getRepositoryId())
-                    .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getRepositoryId().toString(), created);
-            return get(entity.getRepositoryId(), caller);
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        RepositoryPayload payload = normalize(projectId, repoNameMasked, hostType, defaultBranch, repoUrlHash);
+        ensureProjectExists(payload.projectId());
+        ensureUniqueName(payload.projectId(), payload.repoNameMasked(), null);
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        RepositoryModel entity = RepositoryModel.builder()
+                .repositoryId(UUID.randomUUID())
+                .projectId(payload.projectId())
+                .projectAlias(null)
+                .repoNameMasked(payload.repoNameMasked())
+                .hostType(RepositoryModel.HostType.valueOf(payload.hostType()))
+                .defaultBranch(payload.defaultBranch())
+                .repoUrlHash(encrypt(payload.repoUrlHash()))
+                .status(RepositoryModel.RepositoryStatus.ACTIVE)
+                .deleteFlag(false)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .build();
+        repository.insert(entity);
+        return get(entity.getRepositoryId(), caller);
     }
 
     @Transactional
-    public RepositoryModel update(UUID repositoryId, UUID projectId, String repoNameMasked,
+    public RepositoryModel update(UUID repositoryId, UUID projectId, String repoNameMasked, 
         String hostType, String defaultBranch, String repoUrlHash, AppUser caller) {
         requireAdmin(caller);
-        try {
-            RepositoryModel existing = repository.findById(repositoryId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
-            if (existing.isDeleted()) {
-                throw new NotFoundException("Pages.Repository.NotFound");
-            }
-            // Snapshot the still-encrypted state; never feed a decrypted repo URL into the audit trail.
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-            RepositoryPayload payload = normalize(projectId, repoNameMasked, hostType, defaultBranch, repoUrlHash);
-            ensureProjectExists(payload.projectId());
-            ensureUniqueName(payload.projectId(), payload.repoNameMasked(), repositoryId);
-            String actor = resolveActor(caller);
-            existing.setProjectId(payload.projectId());
-            existing.setRepoNameMasked(payload.repoNameMasked());
-            existing.setHostType(RepositoryModel.HostType.valueOf(payload.hostType()));
-            existing.setDefaultBranch(payload.defaultBranch());
-            existing.setRepoUrlHash(encrypt(payload.repoUrlHash()));
-            existing.setUpdatedAt(OffsetDateTime.now());
-            existing.setUpdatedBy(actor);
-            int affected = repository.update(existing);
-            if (affected == 0) {
-                throw new NotFoundException("Pages.Repository.NotFound");
-            }
-            RepositoryModel updated = repository.findById(repositoryId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, repositoryId.toString(), beforeSnapshot, updated);
-            return get(repositoryId, caller);
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, repositoryId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        RepositoryModel existing = repository.findById(repositoryId)
+                .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
+        if (existing.isDeleted()) {
+            throw new NotFoundException("Pages.Repository.NotFound");
         }
+        RepositoryPayload payload = normalize(projectId, repoNameMasked, hostType, defaultBranch, repoUrlHash);
+        ensureProjectExists(payload.projectId());
+        ensureUniqueName(payload.projectId(), payload.repoNameMasked(), repositoryId);
+        String actor = resolveActor(caller);
+        existing.setProjectId(payload.projectId());
+        existing.setRepoNameMasked(payload.repoNameMasked());
+        existing.setHostType(RepositoryModel.HostType.valueOf(payload.hostType()));
+        existing.setDefaultBranch(payload.defaultBranch());
+        existing.setRepoUrlHash(encrypt(payload.repoUrlHash()));
+        existing.setUpdatedAt(OffsetDateTime.now());
+        existing.setUpdatedBy(actor);
+        int affected = repository.update(existing);
+        if (affected == 0) {
+            throw new NotFoundException("Pages.Repository.NotFound");
+        }
+        return get(repositoryId, caller);
     }
 
     @Transactional
     public RepositoryModel softDelete(UUID repositoryId, AppUser caller) {
         requireAdmin(caller);
-        try {
-            RepositoryModel existing = repository.findById(repositoryId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
-            if (existing.isDeleted()) {
-                throw new NotFoundException("Pages.Repository.NotFound");
-            }
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            int affected = repository.softDelete(repositoryId, actor, now, actor, now);
-            if (affected == 0) {
-                throw new NotFoundException("Pages.Repository.NotFound");
-            }
-            RepositoryModel deleted = repository.findById(repositoryId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, repositoryId.toString(), existing);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, repositoryId.toString(), "DELETE", ex.getMessage());
-            throw ex;
+        RepositoryModel existing = repository.findById(repositoryId)
+                .orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
+        if (existing.isDeleted()) {
+            throw new NotFoundException("Pages.Repository.NotFound");
         }
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        int affected = repository.softDelete(repositoryId, actor, now, actor, now);
+        if (affected == 0) {
+            throw new NotFoundException("Pages.Repository.NotFound");
+        }
+        return repository.findById(repositoryId).orElseThrow(() -> new NotFoundException("Pages.Repository.NotFound"));
     }
 
     private void ensureProjectExists(UUID projectId) {

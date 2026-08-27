@@ -2,7 +2,6 @@ package com.sdd.platform.web.dto;
 
 import com.sdd.platform.application.usecase.common.PageResult;
 import com.sdd.platform.domain.model.RepositoryModel;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -67,7 +66,6 @@ public final class RepositoryDtos {
         }
     }
 
-    @NoXssFields
     public record CreateRepositoryRequest(
             UUID projectId,
             String repo_name_masked,
@@ -76,7 +74,6 @@ public final class RepositoryDtos {
             String repo_url_hash
     ) {}
 
-    @NoXssFields
     public record UpdateRepositoryRequest(
             UUID projectId,
             String repo_name_masked,

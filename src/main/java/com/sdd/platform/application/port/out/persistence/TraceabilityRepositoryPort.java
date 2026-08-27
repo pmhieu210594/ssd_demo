@@ -8,7 +8,6 @@ import com.sdd.platform.application.usecase.traceability.TraceabilityModels.Pars
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.PullRequestCoverageRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TicketRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityLinkRow;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityReviewCommentRow;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,8 +30,4 @@ public interface TraceabilityRepositoryPort {
     List<EvidenceEventRow> findEvidenceEvents(UUID ticketId);
 
     List<ParsedSectionRow> findParsedSections(UUID ticketId);
-
-    int findReviewRoundCount(UUID ticketId);
-
-    List<TraceabilityReviewCommentRow> findReviewComments(UUID ticketId);
 }

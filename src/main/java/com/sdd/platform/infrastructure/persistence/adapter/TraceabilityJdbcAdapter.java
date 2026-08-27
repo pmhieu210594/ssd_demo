@@ -1,8 +1,6 @@
 package com.sdd.platform.infrastructure.persistence.adapter;
 
 import com.sdd.platform.application.port.out.persistence.TraceabilityRepositoryPort;
-import com.sdd.platform.application.usecase.devdashboard.DevDashboardModels;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.ArtifactCoverageRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.CiRunCoverageRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.CommitCoverageRow;
@@ -11,8 +9,6 @@ import com.sdd.platform.application.usecase.traceability.TraceabilityModels.Pars
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.PullRequestCoverageRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TicketRow;
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityLinkRow;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityReviewCommentRow;
-
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -33,10 +29,10 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public Optional<TicketRow> findTicket(UUID ticketId) {
         List<TicketRow> rows = jdbc.query("""
-                SELECT ticket_id, project_id, external_ticket_key, title, status::text AS status
-                FROM tbl_dim_ticket
-                WHERE ticket_id = :ticketId
-                """,
+                        SELECT ticket_id, project_id, external_ticket_key, title, status::text AS status
+                        FROM tbl_dim_ticket
+                        WHERE ticket_id = :ticketId
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new TicketRow(
                         rs.getObject("ticket_id", UUID.class),
@@ -50,25 +46,24 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public List<ArtifactCoverageRow> findArtifacts(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    a.artifact_snapshot_id,
-                    t.artifact_type_code,
-                    t.artifact_name,
-                    t.default_file_name,
-                    t.required_flag,
-                    a.source_path,
-                    a.exists_flag,
-                    a.collected_at,
-                    a.schema_version
-                FROM tbl_fact_artifact_snapshot a
-                JOIN tbl_dim_artifact_type t ON t.artifact_type_id = a.artifact_type_id
-                WHERE a.ticket_id = :ticketId
-                  AND t.artifact_type_code IN (
-                      'SPEC_PACK', 'IMPL_PLAN', 'REVIEW_CHECKLIST', 'SELF_REVIEW',
-                      'TEST_PLAN', 'TEST_RESULTS', 'REPORT'
-                  )
-                ORDER BY a.collected_at DESC, a.artifact_snapshot_id DESC
-                """,
+                        SELECT
+                            a.artifact_snapshot_id,
+                            t.artifact_type_code,
+                            t.artifact_name,
+                            t.default_file_name,
+                            t.required_flag,
+                            a.source_path,
+                            a.exists_flag,
+                            COALESCE(a.collected_at, a.created_at) AS collected_at
+                        FROM tbl_fact_artifact_snapshot a
+                        JOIN tbl_dim_artifact_type t ON t.artifact_type_id = a.artifact_type_id
+                        WHERE a.ticket_id = :ticketId
+                          AND t.artifact_type_code IN (
+                              'SPEC_PACK', 'IMPL_PLAN', 'REVIEW_CHECKLIST', 'SELF_REVIEW',
+                              'TEST_PLAN', 'TEST_RESULTS', 'REPORT'
+                          )
+                        ORDER BY COALESCE(a.collected_at, a.created_at) DESC, a.artifact_snapshot_id DESC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new ArtifactCoverageRow(
                         rs.getObject("artifact_snapshot_id", UUID.class),
@@ -78,29 +73,28 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
                         rs.getBoolean("required_flag"),
                         rs.getString("source_path"),
                         rs.getBoolean("exists_flag"),
-                        rs.getObject("collected_at", java.time.OffsetDateTime.class),
-                        rs.getObject("schema_version", Integer.class)));
+                        rs.getObject("collected_at", java.time.OffsetDateTime.class)));
     }
 
     @Override
     public List<PullRequestCoverageRow> findPullRequests(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    pr_id,
-                    external_pr_id,
-                    external_pr_url,
-                    title,
-                    status::text AS status,
-                    source_branch,
-                    target_branch,
-                    opened_at,
-                    merged_at,
-                    closed_at,
-                    COALESCE(collected_at, created_at) AS collected_at
-                FROM tbl_fact_pull_request
-                WHERE ticket_id = :ticketId
-                ORDER BY COALESCE(collected_at, created_at) DESC, pr_id DESC
-                """,
+                        SELECT
+                            pr_id,
+                            external_pr_id,
+                            external_pr_url,
+                            title,
+                            status::text AS status,
+                            source_branch,
+                            target_branch,
+                            opened_at,
+                            merged_at,
+                            closed_at,
+                            COALESCE(collected_at, created_at) AS collected_at
+                        FROM tbl_fact_pull_request
+                        WHERE ticket_id = :ticketId
+                        ORDER BY COALESCE(collected_at, created_at) DESC, pr_id DESC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new PullRequestCoverageRow(
                         rs.getObject("pr_id", UUID.class),
@@ -119,27 +113,25 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public List<CommitCoverageRow> findCommits(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    c.commit_id,
-                    c.commit_hash,
-                    c.branch_name,
-                    c.message_hash,
-                    c.commit_url,
-                    c.committed_at,
-                    COALESCE(c.collected_at, c.created_at) AS collected_at
-                FROM tbl_fact_pull_request pr
-                JOIN tbl_fact_pull_request_commit prc ON prc.pr_id = pr.pr_id
-                JOIN tbl_fact_commit c ON c.commit_id = prc.commit_id
-                WHERE pr.ticket_id = :ticketId
-                ORDER BY c.created_at DESC
-                """,
+                        SELECT
+                            c.commit_id,
+                            c.commit_hash,
+                            c.branch_name,
+                            c.message_hash,
+                            c.committed_at,
+                            COALESCE(c.collected_at, c.created_at) AS collected_at
+                        FROM tbl_fact_pull_request pr
+                        JOIN tbl_fact_pull_request_commit prc ON prc.pr_id = pr.pr_id
+                        JOIN tbl_fact_commit c ON c.commit_id = prc.commit_id
+                        WHERE pr.ticket_id = :ticketId
+                        ORDER BY COALESCE(c.committed_at, c.collected_at, c.created_at) ASC, c.commit_id ASC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new CommitCoverageRow(
                         rs.getObject("commit_id", UUID.class),
                         rs.getString("commit_hash"),
                         rs.getString("branch_name"),
                         rs.getString("message_hash"),
-                        rs.getString("commit_url"),
                         rs.getObject("committed_at", java.time.OffsetDateTime.class),
                         rs.getObject("collected_at", java.time.OffsetDateTime.class)));
     }
@@ -147,19 +139,19 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public List<CiRunCoverageRow> findCiRuns(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    ci_run_id,
-                    external_ci_run_id,
-                    ci_url,
-                    workflow_name,
-                    status::text AS status,
-                    started_at,
-                    finished_at,
-                    COALESCE(collected_at, created_at) AS collected_at
-                FROM tbl_fact_ci_run
-                WHERE ticket_id = :ticketId
-                ORDER BY COALESCE(collected_at, created_at) DESC, ci_run_id DESC
-                """,
+                        SELECT
+                            ci_run_id,
+                            external_ci_run_id,
+                            ci_url,
+                            workflow_name,
+                            status::text AS status,
+                            started_at,
+                            finished_at,
+                            COALESCE(collected_at, created_at) AS collected_at
+                        FROM tbl_fact_ci_run
+                        WHERE ticket_id = :ticketId
+                        ORDER BY COALESCE(collected_at, created_at) DESC, ci_run_id DESC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new CiRunCoverageRow(
                         rs.getObject("ci_run_id", UUID.class),
@@ -175,22 +167,22 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public List<TraceabilityLinkRow> findTraceabilityLinks(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    traceability_link_id,
-                    ticket_id,
-                    source_type,
-                    source_id,
-                    target_type,
-                    target_id,
-                    confidence,
-                    confidence_level::text AS confidence_level,
-                    rule_name,
-                    evidence::text AS evidence_json,
-                    created_at
-                FROM tbl_fact_traceability_link
-                WHERE ticket_id = :ticketId
-                ORDER BY created_at ASC, traceability_link_id ASC
-                """,
+                        SELECT
+                            traceability_link_id,
+                            ticket_id,
+                            source_type,
+                            source_id,
+                            target_type,
+                            target_id,
+                            confidence,
+                            confidence_level::text AS confidence_level,
+                            rule_name,
+                            evidence::text AS evidence_json,
+                            created_at
+                        FROM tbl_fact_traceability_link
+                        WHERE ticket_id = :ticketId
+                        ORDER BY created_at ASC, traceability_link_id ASC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new TraceabilityLinkRow(
                         rs.getObject("traceability_link_id", UUID.class),
@@ -209,20 +201,20 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
     @Override
     public List<EvidenceEventRow> findEvidenceEvents(UUID ticketId) {
         return jdbc.query("""
-                SELECT
-                    evidence_event_id,
-                    event_type,
-                    source_type,
-                    source_ref_id,
-                    result,
-                    summary,
-                    event_timestamp
-                FROM tbl_fact_evidence_event
-                WHERE ticket_id = :ticketId
-                ORDER BY event_timestamp ASC, evidence_event_id ASC
-                """,
+                        SELECT
+                            evidence_event_id,
+                            event_type,
+                            source_type,
+                            source_ref_id,
+                            result,
+                            summary,
+                            event_timestamp
+                        FROM tbl_fact_evidence_event
+                        WHERE ticket_id = :ticketId
+                        ORDER BY event_timestamp ASC, evidence_event_id ASC
+                        """,
                 new MapSqlParameterSource("ticketId", ticketId),
-                (rs, rowNum) -> new EvidenceEventRow(
+                        (rs, rowNum) -> new EvidenceEventRow(
                         rs.getObject("evidence_event_id", UUID.class),
                         rs.getString("event_type"),
                         rs.getString("source_type"),
@@ -234,8 +226,7 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
 
     @Override
     public List<ParsedSectionRow> findParsedSections(UUID ticketId) {
-        return jdbc.query(
-                """
+        return jdbc.query("""
                         SELECT
                             p.parsed_section_id,
                             p.artifact_snapshot_id,
@@ -252,7 +243,7 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
                         JOIN tbl_fact_artifact_snapshot a ON a.artifact_snapshot_id = p.artifact_snapshot_id
                         JOIN tbl_dim_artifact_type t ON t.artifact_type_id = a.artifact_type_id
                         WHERE p.ticket_id = :ticketId
-                        ORDER BY COALESCE(a.collected_at, a.created_at) ASC, t.artifact_type_code ASC, p.section_key ASC, p.parsed_section_id ASC
+                        ORDER BY COALESCE(a.collected_at, a.created_at) DESC, t.artifact_type_code ASC, p.section_key ASC, p.parsed_section_id ASC
                         """,
                 new MapSqlParameterSource("ticketId", ticketId),
                 (rs, rowNum) -> new ParsedSectionRow(
@@ -267,54 +258,5 @@ public class TraceabilityJdbcAdapter implements TraceabilityRepositoryPort {
                         rs.getObject("valid_flag", Boolean.class),
                         rs.getString("parse_warning"),
                         rs.getObject("collected_at", java.time.OffsetDateTime.class)));
-    }
-
-    @Override
-    public int findReviewRoundCount(UUID ticketId) {
-        Integer count = jdbc.queryForObject(
-                """
-                SELECT
-                     (SELECT COUNT(*) FROM tbl_fact_review r
-                     WHERE r.ticket_id = t.ticket_id) AS review_round_count
-                FROM tbl_dim_ticket t
-                JOIN tbl_dim_project p ON p.project_id = t.project_id
-                WHERE t.ticket_id = :ticketId
-                """,
-                new MapSqlParameterSource("ticketId", ticketId), Integer.class
-            );
-        return count != null ? count : 0;
-    }
-
-    @Override
-    public List<TraceabilityReviewCommentRow> findReviewComments(UUID ticketId) {
-        var params = new MapSqlParameterSource().addValue("ticketId", ticketId);
-        return jdbc.query("""
-                SELECT rc.review_comment_id::text, rc.file_path_hash, rc.line_number,
-                       CAST(rc.severity AS VARCHAR) AS severity, rc.comment_summary, rc.resolved_flag,
-                       (SELECT c.commit_url FROM tbl_fact_pull_request_commit prc
-                        JOIN tbl_fact_commit c ON c.commit_id = prc.commit_id
-                        WHERE prc.pr_id = rc.pr_id
-                        ORDER BY c.committed_at DESC NULLS LAST LIMIT 1) AS commit_url,
-                        r.state,
-                        r.submitted_at,
-                        r.submitted_by
-                FROM tbl_fact_review_comment rc
-                LEFT JOIN tbl_fact_review r
-                    ON r.review_id = rc.review_id
-                    AND r.pr_id = rc.pr_id
-                    AND r.ticket_id = rc.ticket_id
-                WHERE rc.ticket_id = :ticketId
-                ORDER BY r.submitted_at DESC NULLS LAST
-                LIMIT 50
-                """, params,
-                (rs, rowNum) -> new TraceabilityReviewCommentRow(
-                        UUID.fromString(rs.getString("review_comment_id")),
-                        rs.getString("file_path_hash"),
-                        (Integer) rs.getObject("line_number"),
-                        rs.getString("comment_summary"),
-                        rs.getString("state"),
-                        rs.getString("submitted_at"),
-                        rs.getString("submitted_by")
-                ));
     }
 }

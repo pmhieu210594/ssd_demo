@@ -66,17 +66,17 @@ class RoleControllerIntegrationTest {
     @Test
     void list_returnsRawRoleArray() throws Exception {
         Role role = role(UUID.randomUUID(), "PM");
-        when(service.list(eq("pm"), eq("ACTIVE"), eq(caller))).thenReturn(List.of(role));
+        when(service.list(eq("pm"), eq("roleNameAsc"), eq(caller))).thenReturn(List.of(role));
 
         mockMvc.perform(get("/api/v1/roles")
                         .param("keyword", "pm")
-                        .param("status", "ACTIVE"))
+                        .param("sort", "roleNameAsc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].roleId").value(role.getRoleId().toString()))
                 .andExpect(jsonPath("$[0].roleName").value("PM"))
                 .andExpect(jsonPath("$[0].description").value("Description"));
 
-        verify(service).list(eq("pm"), eq("ACTIVE"), eq(caller));
+        verify(service).list(eq("pm"), eq("roleNameAsc"), eq(caller));
     }
 
     @Test

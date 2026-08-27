@@ -6,8 +6,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -27,7 +25,7 @@ public class GithubArtifactScannerSourceAdapter implements ArtifactScannerSource
         RepoParts repo = parseRepo(repositoryFullName);
         String revision = normalizeRevision(refOrSha);
         if (isSha(revision)) {
-            return new ResolvedRevision(revision, resolveCommitDate(repo, revision));
+            return new ResolvedRevision(revision, null);
         }
 
         JsonNode ref = githubWebClient.get()
@@ -42,7 +40,7 @@ public class GithubArtifactScannerSourceAdapter implements ArtifactScannerSource
         if (sha.isBlank()) {
             throw new IllegalStateException("Unable to resolve GitHub revision for " + repositoryFullName);
         }
-        return new ResolvedRevision(sha, resolveCommitDate(repo, sha));
+        return new ResolvedRevision(sha, null);
     }
 
     @Override
@@ -123,43 +121,6 @@ public class GithubArtifactScannerSourceAdapter implements ArtifactScannerSource
             throw new IllegalArgumentException("INVALID_REPOSITORY_FULL_NAME");
         }
         return new RepoParts(parts[0], parts[1]);
-    }
-
-    private OffsetDateTime resolveCommitDate(RepoParts repo, String sha) {
-        if (sha == null || sha.isBlank()) {
-            return null;
-        }
-        try {
-            JsonNode response = githubWebClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/repos/{owner}/{repo}/commits/{sha}")
-                            .build(repo.owner(), repo.name(), sha))
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
-            if (response == null) {
-                return null;
-            }
-
-            OffsetDateTime committedAt = parseDate(response.path("commit").path("committer").path("date").asText(null));
-            if (committedAt == null) {
-                committedAt = parseDate(response.path("commit").path("author").path("date").asText(null));
-            }
-            return committedAt;
-        } catch (RuntimeException ex) {
-            return null;
-        }
-    }
-
-    private OffsetDateTime parseDate(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return OffsetDateTime.parse(value);
-        } catch (DateTimeParseException ex) {
-            return null;
-        }
     }
 
     private record RepoParts(String owner, String name) {}

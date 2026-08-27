@@ -51,12 +51,6 @@ After running updates:
 
 ---
 
-## Ticket Artifact Provenance (Confirmed — ADMIN-AUDIT-LOG 2026-07-10)
-
-Before treating any file under `docs/changes/<TICKET>/` as review or promotion input, check its own `**Ticket ID**` header against the ticket currently being worked on. A ticket folder created from a template or copied from a prior ticket can carry leftover content whose header still names a different ticket — this happened to `promotion-candidates.md` in `ADMIN-AUDIT-LOG` (content for `PARSER-SPEC-PACK` was found in the file). Do not synthesize decisions from an artifact whose header does not match; flag it and ask instead.
-
----
-
 ## Source Availability Review (Confirmed as process)
 
 `docs/maintenance/phase0/source-availability.md` tracks:

@@ -92,7 +92,6 @@ class ArtifactScannerControllerIntegrationTest {
                 "docs/changes/ARTIFACT-SCANNER/spec-pack.md",
                 true,
                 "hash-1",
-                1,
                 123L,
                 OffsetDateTime.parse("2026-06-16T06:42:28Z"),
                 false,

@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,15 +25,11 @@ public class ProjectService {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
     private static final int PROJECT_TYPE_MAX_LENGTH = 100;
-    private static final String MODULE = "PROJECT";
-    private static final String ENTITY_TYPE = "PROJECT";
 
     private final ProjectRepositoryPort repository;
-    private final AdminAuditLogService adminAuditLogService;
 
-    public ProjectService(ProjectRepositoryPort repository, AdminAuditLogService adminAuditLogService) {
+    public ProjectService(ProjectRepositoryPort repository) {
         this.repository = repository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -54,7 +49,12 @@ public class ProjectService {
     @Transactional(readOnly = true)
     public Project get(UUID projectId, AppUser caller) {
         requireAdmin(caller);
-        Project project = loadActiveWithAssignments(projectId);
+        Project project = repository.findById(projectId)
+                .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
+        if (project.isDeleted()) {
+            throw new NotFoundException("Pages.Project.NotFound");
+        }
+        project.setTeamAssignments(repository.findActiveTeamAssignments(projectId));
         return project;
     }
 
@@ -68,40 +68,33 @@ public class ProjectService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            UUID normalizedCustomerId = requireCustomerId(customerId);
-            ensureActiveCustomer(normalizedCustomerId);
-            String normalizedAlias = normalizeRequired(projectAlias, 255, "Pages.Project.Alias.Required", "Pages.Project.Alias.MaxLength");
-            String normalizedProjectType = normalizeOptional(projectType, PROJECT_TYPE_MAX_LENGTH, "Pages.Project.ProjectType.MaxLength");
-            Project.RiskLevel normalizedRiskLevel = normalizeRiskLevel(riskLevel);
-            List<UUID> normalizedTeamIds = normalizeTeamIds(teamIds);
-            ensureUniqueAlias(normalizedCustomerId, normalizedAlias, null);
-            validateTeamIds(normalizedTeamIds);
+        UUID normalizedCustomerId = requireCustomerId(customerId);
+        ensureActiveCustomer(normalizedCustomerId);
+        String normalizedAlias = normalizeRequired(projectAlias, 255, "Pages.Project.Alias.Required", "Pages.Project.Alias.MaxLength");
+        String normalizedProjectType = normalizeOptional(projectType, PROJECT_TYPE_MAX_LENGTH, "Pages.Project.ProjectType.MaxLength");
+        Project.RiskLevel normalizedRiskLevel = normalizeRiskLevel(riskLevel);
+        List<UUID> normalizedTeamIds = normalizeTeamIds(teamIds);
+        ensureUniqueAlias(normalizedCustomerId, normalizedAlias, null);
+        validateTeamIds(normalizedTeamIds);
 
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            Project project = Project.builder()
-                    .projectId(UUID.randomUUID())
-                    .customerId(normalizedCustomerId)
-                    .projectAlias(normalizedAlias)
-                    .projectType(normalizedProjectType)
-                    .riskLevel(normalizedRiskLevel)
-                    .status(Project.ProjectStatus.ACTIVE)
-                    .deleteFlag(false)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .build();
-            repository.insert(project);
-            syncTeamAssignments(project.getProjectId(), normalizedTeamIds, actor, now);
-            Project created = loadActiveWithAssignments(project.getProjectId());
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getProjectId().toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        Project project = Project.builder()
+                .projectId(UUID.randomUUID())
+                .customerId(normalizedCustomerId)
+                .projectAlias(normalizedAlias)
+                .projectType(normalizedProjectType)
+                .riskLevel(normalizedRiskLevel)
+                .status(Project.ProjectStatus.ACTIVE)
+                .deleteFlag(false)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .build();
+        repository.insert(project);
+        syncTeamAssignments(project.getProjectId(), normalizedTeamIds, actor, now);
+        return get(project.getProjectId(), caller);
     }
 
     @Transactional
@@ -115,73 +108,52 @@ public class ProjectService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            Project existing = loadActiveWithAssignments(projectId);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-
-            UUID normalizedCustomerId = requireCustomerId(customerId);
-            ensureActiveCustomer(normalizedCustomerId);
-            String normalizedAlias = normalizeRequired(projectAlias, 255, "Pages.Project.Alias.Required", "Pages.Project.Alias.MaxLength");
-            String normalizedProjectType = normalizeOptional(projectType, PROJECT_TYPE_MAX_LENGTH, "Pages.Project.ProjectType.MaxLength");
-            Project.RiskLevel normalizedRiskLevel = normalizeRiskLevel(riskLevel);
-            List<UUID> normalizedTeamIds = normalizeTeamIds(teamIds);
-            ensureUniqueAlias(normalizedCustomerId, normalizedAlias, projectId);
-            validateTeamIds(normalizedTeamIds);
-
-            existing.setCustomerId(normalizedCustomerId);
-            existing.setProjectAlias(normalizedAlias);
-            existing.setProjectType(normalizedProjectType);
-            existing.setRiskLevel(normalizedRiskLevel);
-            existing.setUpdatedAt(OffsetDateTime.now());
-            existing.setUpdatedBy(resolveActor(caller));
-
-            int affected = repository.update(existing);
-            if (affected == 0) {
-                throw new NotFoundException("Pages.Project.NotFound");
-            }
-            syncTeamAssignments(projectId, normalizedTeamIds, existing.getUpdatedBy(), existing.getUpdatedAt());
-            Project updated = loadActiveWithAssignments(projectId);
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, projectId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, projectId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        Project existing = repository.findById(projectId)
+                .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
+        if (existing.isDeleted()) {
+            throw new NotFoundException("Pages.Project.NotFound");
         }
+
+        UUID normalizedCustomerId = requireCustomerId(customerId);
+        ensureActiveCustomer(normalizedCustomerId);
+        String normalizedAlias = normalizeRequired(projectAlias, 255, "Pages.Project.Alias.Required", "Pages.Project.Alias.MaxLength");
+        String normalizedProjectType = normalizeOptional(projectType, PROJECT_TYPE_MAX_LENGTH, "Pages.Project.ProjectType.MaxLength");
+        Project.RiskLevel normalizedRiskLevel = normalizeRiskLevel(riskLevel);
+        List<UUID> normalizedTeamIds = normalizeTeamIds(teamIds);
+        ensureUniqueAlias(normalizedCustomerId, normalizedAlias, projectId);
+        validateTeamIds(normalizedTeamIds);
+
+        existing.setCustomerId(normalizedCustomerId);
+        existing.setProjectAlias(normalizedAlias);
+        existing.setProjectType(normalizedProjectType);
+        existing.setRiskLevel(normalizedRiskLevel);
+        existing.setUpdatedAt(OffsetDateTime.now());
+        existing.setUpdatedBy(resolveActor(caller));
+
+        int affected = repository.update(existing);
+        if (affected == 0) {
+            throw new NotFoundException("Pages.Project.NotFound");
+        }
+        syncTeamAssignments(projectId, normalizedTeamIds, existing.getUpdatedBy(), existing.getUpdatedAt());
+        return get(projectId, caller);
     }
 
     @Transactional
     public Project softDelete(UUID projectId, AppUser caller) {
         requireAdmin(caller);
-        try {
-            Project existing = repository.findById(projectId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
-            if (existing.isDeleted()) {
-                throw new NotFoundException("Pages.Project.NotFound");
-            }
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            int affected = repository.softDelete(projectId, actor, now, actor, now);
-            if (affected == 0) {
-                throw new NotFoundException("Pages.Project.NotFound");
-            }
-            Project deleted = repository.findById(projectId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, projectId.toString(), existing);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, projectId.toString(), "DELETE", ex.getMessage());
-            throw ex;
-        }
-    }
-
-    private Project loadActiveWithAssignments(UUID projectId) {
-        Project project = repository.findById(projectId)
+        Project existing = repository.findById(projectId)
                 .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
-        if (project.isDeleted()) {
+        if (existing.isDeleted()) {
             throw new NotFoundException("Pages.Project.NotFound");
         }
-        project.setTeamAssignments(repository.findActiveTeamAssignments(projectId));
-        return project;
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        int affected = repository.softDelete(projectId, actor, now, actor, now);
+        if (affected == 0) {
+            throw new NotFoundException("Pages.Project.NotFound");
+        }
+        return repository.findById(projectId)
+                .orElseThrow(() -> new NotFoundException("Pages.Project.NotFound"));
     }
 
     private void syncTeamAssignments(UUID projectId, List<UUID> teamIds, String actor, OffsetDateTime now) {

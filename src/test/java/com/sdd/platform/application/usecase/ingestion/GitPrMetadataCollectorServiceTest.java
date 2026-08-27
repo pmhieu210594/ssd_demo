@@ -8,10 +8,6 @@ import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorMode
 import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.CommitSnapshot;
 import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.CollectorRun;
 import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.PullRequestGraph;
-import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.ReviewSnapshot;
-import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.ReviewCommentSnapshot;
-import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.ReviewUpsert;
-import com.sdd.platform.application.usecase.ingestion.GitPrMetadataCollectorModels.ReviewCommentUpsert;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreService;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.ConnectorScope;
 import com.sdd.platform.application.usecase.scanner.ArtifactScannerModels.RepositoryScope;
@@ -65,8 +61,6 @@ class GitPrMetadataCollectorServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.when(persistence.findMemberKeyByExternalUserHash(Mockito.anyString()))
                 .thenReturn(Optional.empty());
-        Mockito.when(persistence.findFullnameByMemberKey(Mockito.any()))
-                .thenReturn(Optional.empty());
         Mockito.when(persistence.upsertCommit(Mockito.any())).thenReturn(UUID.randomUUID());
         Mockito.when(persistence.upsertPullRequestChangedFile(Mockito.any())).thenReturn(UUID.randomUUID());
         Mockito.doNothing().when(persistence).upsertPullRequestCommit(Mockito.any(), Mockito.any());
@@ -84,15 +78,12 @@ class GitPrMetadataCollectorServiceTest {
                 .thenReturn(Optional.of(new TicketScope(ticketId, "ABC-123")));
         Mockito.when(persistence.findMemberKeyByExternalUserHash("a6658157f0df83900a6c8f3b34a7c739c66455d34b142846c96dedcacda08a3c"))
                 .thenReturn(Optional.of(authorMemberKey));
-        Mockito.when(persistence.findFullnameByMemberKey(authorMemberKey))
-                .thenReturn(Optional.of("Octo Cat"));
         Mockito.when(persistence.upsertMinimalTicket(
-                        Mockito.eq(projectId),
-                        Mockito.eq("ABC-123"),
-                        Mockito.eq("ABC-123 Improve stock shortage error"),
-                        Mockito.eq("OPEN"),
-                        Mockito.eq(OffsetDateTime.parse("2026-06-17T00:30:00Z")),
-                        Mockito.anyString()))
+                        projectId,
+                        "ABC-123",
+                        "ABC-123 Improve stock shortage error",
+                        "OPEN",
+                        OffsetDateTime.parse("2026-06-17T00:30:00Z")))
                 .thenReturn(new TicketScope(ticketId, "ABC-123"));
         Mockito.when(githubPort.fetchPullRequest("acme/widget", 123))
                 .thenReturn(new PullRequestGraph(
@@ -145,16 +136,12 @@ class GitPrMetadataCollectorServiceTest {
         assertEquals("OPEN", prCaptor.getValue().status());
         assertEquals("APPROVED", prCaptor.getValue().reviewState());
         assertEquals(authorMemberKey, prCaptor.getValue().authorMemberKey());
-        assertEquals("Octo Cat", prCaptor.getValue().authorDisplayName());
-        ArgumentCaptor<String> createdByCaptor = ArgumentCaptor.forClass(String.class);
         Mockito.verify(persistence).upsertMinimalTicket(
-                Mockito.eq(projectId),
-                Mockito.eq("ABC-123"),
-                Mockito.eq("ABC-123 Improve stock shortage error"),
-                Mockito.eq("OPEN"),
-                Mockito.eq(OffsetDateTime.parse("2026-06-17T00:30:00Z")),
-                createdByCaptor.capture());
-        assertEquals("Octo Cat", createdByCaptor.getValue());
+                projectId,
+                "ABC-123",
+                "ABC-123 Improve stock shortage error",
+                "OPEN",
+                OffsetDateTime.parse("2026-06-17T00:30:00Z"));
         Mockito.verify(evidenceQualityScoreService).recalculateFromSourceChange(Mockito.eq(UUID.fromString("f5b8aa42-7ef1-49b2-b5de-d07b3cf5a6db")), Mockito.isNull(), Mockito.anyString());
     }
 
@@ -163,9 +150,8 @@ class GitPrMetadataCollectorServiceTest {
         UUID parserTicketId = UUID.fromString("132bcedf-41e6-4ce7-96b2-4b06511c85fe");
         Mockito.when(persistence.findTicketByProjectIdAndExternalKey(projectId, "PARSER-SPEC-PACK"))
                 .thenReturn(Optional.empty());
-        Mockito.when(persistence.upsertMinimalTicket(Mockito.eq(projectId), Mockito.eq("PARSER-SPEC-PACK"), Mockito.eq("commit"), Mockito.eq("OPEN"),
-                        Mockito.eq(OffsetDateTime.parse("2026-06-17T00:30:00Z")),
-                        Mockito.anyString()))
+        Mockito.when(persistence.upsertMinimalTicket(projectId, "PARSER-SPEC-PACK", "commit", "OPEN",
+                        OffsetDateTime.parse("2026-06-17T00:30:00Z")))
                 .thenReturn(new TicketScope(parserTicketId, "PARSER-SPEC-PACK"));
         Mockito.when(githubPort.fetchPullRequest("acme/widget", 50))
                 .thenReturn(new PullRequestGraph(
@@ -219,7 +205,7 @@ class GitPrMetadataCollectorServiceTest {
         UUID loginTicketId = UUID.fromString("f5b8aa42-7ef1-49b2-b5de-d07b3cf5a6db");
         Mockito.when(persistence.findTicketByProjectIdAndExternalKey(projectId, "LOGIN"))
                 .thenReturn(Optional.of(new TicketScope(loginTicketId, "LOGIN")));
-        Mockito.when(persistence.upsertMinimalTicket(Mockito.eq(projectId), Mockito.eq("LOGIN"), Mockito.eq("PDKHOA2505"), Mockito.eq("OPEN"), Mockito.isNull(), Mockito.anyString()))
+        Mockito.when(persistence.upsertMinimalTicket(projectId, "LOGIN", "PDKHOA2505", "OPEN", null))
                 .thenReturn(new TicketScope(loginTicketId, "LOGIN"));
         Mockito.when(githubPort.fetchPullRequest("acme/widget", 124))
                 .thenReturn(new PullRequestGraph(
@@ -253,7 +239,7 @@ class GitPrMetadataCollectorServiceTest {
         Mockito.verify(persistence).upsertPullRequest(prCaptor.capture());
         assertEquals(loginTicketId, prCaptor.getValue().ticketId());
         assertEquals("LOGIN", prCaptor.getValue().linkedIssueKey());
-        Mockito.verify(persistence).upsertMinimalTicket(Mockito.eq(projectId), Mockito.eq("LOGIN"), Mockito.eq("PDKHOA2505"), Mockito.eq("OPEN"), Mockito.isNull(), Mockito.anyString());
+        Mockito.verify(persistence).upsertMinimalTicket(projectId, "LOGIN", "PDKHOA2505", "OPEN", null);
         Mockito.verify(persistence).upsertTraceabilityLink(Mockito.argThat(link ->
                 loginTicketId.equals(link.ticketId())
                         && "LOGIN".equals(link.sourceId())
@@ -330,7 +316,7 @@ class GitPrMetadataCollectorServiceTest {
         UUID ticketId = UUID.randomUUID();
         Mockito.when(persistence.findTicketByProjectIdAndExternalKey(projectId, "ABC-123"))
                 .thenReturn(Optional.of(new TicketScope(ticketId, "ABC-123")));
-        Mockito.when(persistence.upsertMinimalTicket(Mockito.eq(projectId), Mockito.eq("ABC-123"), Mockito.eq("ABC-123 Feature"), Mockito.eq("OPEN"), Mockito.isNull(), Mockito.anyString()))
+        Mockito.when(persistence.upsertMinimalTicket(projectId, "ABC-123", "ABC-123 Feature", "OPEN", null))
                 .thenReturn(new TicketScope(ticketId, "ABC-123"));
         Mockito.when(githubPort.fetchPullRequest("acme/widget", 80))
                 .thenReturn(new PullRequestGraph(
@@ -352,7 +338,7 @@ class GitPrMetadataCollectorServiceTest {
         assertEquals("SUCCESS", result2.status());
         // Verify that upsertPullRequest was called twice but with same identity
         Mockito.verify(persistence, Mockito.times(2)).upsertPullRequest(Mockito.any());
-        Mockito.verify(persistence, Mockito.times(2)).upsertMinimalTicket(Mockito.eq(projectId), Mockito.eq("ABC-123"), Mockito.eq("ABC-123 Feature"), Mockito.eq("OPEN"), Mockito.isNull(), Mockito.anyString());
+        Mockito.verify(persistence, Mockito.times(2)).upsertMinimalTicket(projectId, "ABC-123", "ABC-123 Feature", "OPEN", null);
     }
 
     @Test
@@ -361,12 +347,11 @@ class GitPrMetadataCollectorServiceTest {
         Mockito.when(persistence.findTicketByProjectIdAndExternalKey(projectId, "ARTIFACT-SCANNER"))
                 .thenReturn(Optional.of(new TicketScope(existingTicketId, "ARTIFACT-SCANNER")));
         Mockito.when(persistence.upsertMinimalTicket(
-                        Mockito.eq(projectId),
-                        Mockito.eq("ARTIFACT-SCANNER"),
-                        Mockito.eq("ARTIFACT-SCANNER: Implement scanner"),
-                        Mockito.eq("OPEN"),
-                        Mockito.isNull(),
-                        Mockito.anyString()))
+                        projectId,
+                        "ARTIFACT-SCANNER",
+                        "ARTIFACT-SCANNER: Implement scanner",
+                        "OPEN",
+                        null))
                 .thenReturn(new TicketScope(existingTicketId, "ARTIFACT-SCANNER"));
         Mockito.when(githubPort.fetchPullRequest("acme/widget", 90))
                 .thenReturn(new PullRequestGraph(
@@ -387,12 +372,11 @@ class GitPrMetadataCollectorServiceTest {
         // Verify that it reused the existing ticket ID
         assertEquals(existingTicketId, prCaptor.getValue().ticketId());
         Mockito.verify(persistence).upsertMinimalTicket(
-                Mockito.eq(projectId),
-                Mockito.eq("ARTIFACT-SCANNER"),
-                Mockito.eq("ARTIFACT-SCANNER: Implement scanner"),
-                Mockito.eq("OPEN"),
-                Mockito.isNull(),
-                Mockito.anyString());
+                projectId,
+                "ARTIFACT-SCANNER",
+                "ARTIFACT-SCANNER: Implement scanner",
+                "OPEN",
+                null);
     }
 
     @Test
@@ -436,137 +420,5 @@ class GitPrMetadataCollectorServiceTest {
                 ArgumentCaptor.forClass(GitPrMetadataCollectorModels.PullRequestUpsert.class);
         Mockito.verify(persistence).upsertPullRequest(prCaptor.capture());
         assertEquals("REVIEW_REQUIRED", prCaptor.getValue().reviewState());
-    }
-
-    @Test
-    void collect_pull_request_persists_review_rounds_and_comments_with_submitted_by() {
-        Mockito.when(persistence.insertReview(Mockito.any())).thenReturn(
-                UUID.fromString("11111111-1111-1111-1111-111111111111"),
-                UUID.fromString("22222222-2222-2222-2222-222222222222"));
-        Mockito.when(githubPort.fetchPullRequest("acme/widget", 92))
-                .thenReturn(new PullRequestGraph(
-                        92,
-                        "Add feature",
-                        null,
-                        "https://github.com/acme/widget/pull/92",
-                        "open",
-                        false,
-                        "feature/add",
-                        "4444444444444444444444444444444444444444",
-                        "main",
-                        OffsetDateTime.parse("2026-06-17T00:00:00Z"),
-                        OffsetDateTime.parse("2026-06-17T01:00:00Z"),
-                        null,
-                        null,
-                        "octocat",
-                        List.of(),
-                        "APPROVED",
-                        List.of(),
-                        List.of(),
-                        List.of(
-                                new ReviewSnapshot(
-                                        "review-1",
-                                        "octocat",
-                                        "APPROVED",
-                                        "Looks good to me",
-                                        null,
-                                        OffsetDateTime.parse("2026-06-17T02:00:00Z"),
-                                        "octocat"
-                                ),
-                                new ReviewSnapshot(
-                                        "review-2",
-                                        "reviewer2",
-                                        "CHANGES_REQUESTED",
-                                        null,
-                                        null,
-                                        OffsetDateTime.parse("2026-06-17T02:30:00Z"),
-                                        "reviewer2"
-                                )
-                        ),
-                        List.of(
-                                new ReviewCommentSnapshot(
-                                        "comment-1",
-                                        "review-1",
-                                        "octocat",
-                                        "nit: rename variable",
-                                        "src/main/java/com/example/App.java",
-                                        12,
-                                        OffsetDateTime.parse("2026-06-17T02:05:00Z")
-                                )
-                        )
-                ));
-
-        var result = service.collectPullRequest(repositoryId, 92, "tester@example.com");
-
-        assertEquals("SUCCESS", result.status());
-
-        ArgumentCaptor<ReviewUpsert> reviewCaptor = ArgumentCaptor.forClass(ReviewUpsert.class);
-        Mockito.verify(persistence, Mockito.times(2)).insertReview(reviewCaptor.capture());
-        List<ReviewUpsert> reviews = reviewCaptor.getAllValues();
-        assertEquals("octocat", reviews.get(0).submittedBy());
-        assertEquals(1, reviews.get(0).commentCount());
-        assertEquals("reviewer2", reviews.get(1).submittedBy());
-        assertEquals(0, reviews.get(1).commentCount());
-
-        ArgumentCaptor<ReviewCommentUpsert> commentCaptor = ArgumentCaptor.forClass(ReviewCommentUpsert.class);
-        Mockito.verify(persistence, Mockito.times(2)).insertReviewComment(commentCaptor.capture());
-        List<ReviewCommentUpsert> comments = commentCaptor.getAllValues();
-
-        // First insertReviewComment call is for review-1's own body text (only review-1 has a non-blank body).
-        assertEquals("Looks good to me", comments.get(0).commentHash());
-        assertEquals(UUID.fromString("11111111-1111-1111-1111-111111111111"), comments.get(0).reviewId());
-
-        // Second call is the inline review comment, resolved to review-1's DB id via externalReviewId.
-        assertEquals("nit: rename variable", comments.get(1).commentHash());
-        assertEquals(UUID.fromString("11111111-1111-1111-1111-111111111111"), comments.get(1).reviewId());
-        assertEquals(12, comments.get(1).lineNumber());
-
-        // review-2 has a null body: must NOT produce an extra insertReviewComment call (regression guard).
-        assertEquals(2, comments.size());
-    }
-
-    @Test
-    void collect_pull_request_review_comment_with_unmatched_external_review_id_has_null_review_id() {
-        Mockito.when(githubPort.fetchPullRequest("acme/widget", 93))
-                .thenReturn(new PullRequestGraph(
-                        93,
-                        "Add feature",
-                        null,
-                        "https://github.com/acme/widget/pull/93",
-                        "open",
-                        false,
-                        "feature/add-2",
-                        "6666666666666666666666666666666666666666",
-                        "main",
-                        OffsetDateTime.parse("2026-06-17T00:00:00Z"),
-                        OffsetDateTime.parse("2026-06-17T01:00:00Z"),
-                        null,
-                        null,
-                        "octocat",
-                        List.of(),
-                        "UNKNOWN",
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        List.of(
-                                new ReviewCommentSnapshot(
-                                        "comment-orphan",
-                                        "review-does-not-exist",
-                                        "octocat",
-                                        "orphan inline comment",
-                                        "src/main/java/com/example/App.java",
-                                        5,
-                                        OffsetDateTime.parse("2026-06-17T02:05:00Z")
-                                )
-                        )
-                ));
-
-        var result = service.collectPullRequest(repositoryId, 93, "tester@example.com");
-
-        assertEquals("SUCCESS", result.status());
-        ArgumentCaptor<ReviewCommentUpsert> commentCaptor = ArgumentCaptor.forClass(ReviewCommentUpsert.class);
-        Mockito.verify(persistence).insertReviewComment(commentCaptor.capture());
-        assertNull(commentCaptor.getValue().reviewId());
-        assertEquals("orphan inline comment", commentCaptor.getValue().commentHash());
     }
 }

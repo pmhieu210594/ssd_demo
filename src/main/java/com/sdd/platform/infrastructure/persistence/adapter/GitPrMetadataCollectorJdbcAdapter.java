@@ -69,7 +69,7 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
     }
 
     @Override
-    public TicketScope upsertMinimalTicket(UUID projectId, String externalTicketKey, String title, String status, OffsetDateTime lastCommitAt, String createdBy) {
+    public TicketScope upsertMinimalTicket(UUID projectId, String externalTicketKey, String title, String status, OffsetDateTime lastCommitAt) {
         UUID ticketId = jdbc.queryForObject("""
                 INSERT INTO tbl_dim_ticket (
                     project_id,
@@ -89,9 +89,9 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
                     COALESCE(CAST(:status AS ticket_status), 'OPEN'::ticket_status),
                     :lastCommitAt,
                     now(),
-                    COALESCE(NULLIF(TRIM(:createdBy), ''), 'SYSTEM'),
+                    'SYSTEM',
                     now(),
-                    COALESCE(NULLIF(TRIM(:createdBy), ''), 'SYSTEM')
+                    'SYSTEM'
                 )
                 ON CONFLICT (project_id, external_ticket_key) DO UPDATE
                 SET title = EXCLUDED.title,
@@ -103,11 +103,10 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
                 """,
                 new MapSqlParameterSource()
                         .addValue("projectId", projectId)
-                        .addValue("externalTicketKey", canonicalTicketKey(externalTicketKey))
+                        .addValue("externalTicketKey", externalTicketKey)
                         .addValue("title", (title == null || title.isBlank()) ? externalTicketKey : title)
                         .addValue("status", status)
-                        .addValue("lastCommitAt", lastCommitAt)
-                        .addValue("createdBy", createdBy),
+                        .addValue("lastCommitAt", lastCommitAt),
                 UUID.class);
         return new TicketScope(ticketId, externalTicketKey);
     }
@@ -236,37 +235,20 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
     }
 
     @Override
-    public Optional<String> findFullnameByMemberKey(UUID memberKey) {
-        if (memberKey == null) {
-            return Optional.empty();
-        }
-        var rows = jdbc.query("""
-                SELECT fullname
-                FROM tbl_auth_user_account
-                WHERE member_key = :memberKey
-                  AND fullname IS NOT NULL
-                  AND BTRIM(fullname) <> ''
-                """,
-                new MapSqlParameterSource("memberKey", memberKey),
-                (rs, rowNum) -> rs.getString("fullname"));
-        return rows.stream().findFirst();
-    }
-
-    @Override
     public UUID upsertPullRequest(PullRequestUpsert request) {
         return jdbc.queryForObject("""
                 INSERT INTO tbl_fact_pull_request (
                     repository_id, ticket_id, external_pr_number, external_pr_id,
                     title, description_hash, status, source_branch, target_branch,
                     opened_at, merged_at, closed_at, external_pr_url, external_updated_at,
-                    review_state, author_member_key, author_display_name, linked_issue_key, labels, collected_at,
+                    review_state, author_member_key, linked_issue_key, labels, collected_at,
                     created_by, updated_by
                 )
                 VALUES (
                     :repositoryId, :ticketId, :externalPrNumber, :externalPrId,
                     :title, :descriptionHash, CAST(:status AS pr_status), :sourceBranch, :targetBranch,
                     :openedAt, :mergedAt, :closedAt, :externalPrUrl, :externalUpdatedAt,
-                    CAST(:reviewState AS review_state), :authorMemberKey, :authorDisplayName, :linkedIssueKey, CAST(:labelsJson AS jsonb), :collectedAt,
+                    CAST(:reviewState AS review_state), :authorMemberKey, :linkedIssueKey, CAST(:labelsJson AS jsonb), :collectedAt,
                     :actor, :actor
                 )
                 ON CONFLICT (repository_id, external_pr_id) DO UPDATE
@@ -284,7 +266,6 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
                     external_updated_at = EXCLUDED.external_updated_at,
                     review_state = EXCLUDED.review_state,
                     author_member_key = EXCLUDED.author_member_key,
-                    author_display_name = EXCLUDED.author_display_name,
                     linked_issue_key = EXCLUDED.linked_issue_key,
                     labels = EXCLUDED.labels,
                     collected_at = EXCLUDED.collected_at,
@@ -309,7 +290,6 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
                         .addValue("externalUpdatedAt", request.updatedAt())
                         .addValue("reviewState", request.reviewState())
                         .addValue("authorMemberKey", request.authorMemberKey())
-                        .addValue("authorDisplayName", request.authorDisplayName())
                         .addValue("linkedIssueKey", request.linkedIssueKey())
                         .addValue("labelsJson", request.labelsJson())
                         .addValue("collectedAt", request.collectedAt())
@@ -473,11 +453,11 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
     public UUID insertReview(ReviewUpsert request) {
         return jdbc.queryForObject("""
                 INSERT INTO tbl_fact_review (
-                    pr_id, ticket_id, reviewer_member_key, state, submitted_at, submitted_by, comment_count,
+                    pr_id, ticket_id, state, submitted_at, comment_count,
                     collected_at, created_by, updated_by
                 )
                 VALUES (
-                    :prId, :ticketId, :reviewerMemberKey, CAST(:state AS review_state), :submittedAt, :submittedBy, :commentCount,
+                    :prId, :ticketId, CAST(:state AS review_state), :submittedAt, :commentCount,
                     :collectedAt, :actor, :actor
                 )
                 RETURNING review_id
@@ -485,10 +465,8 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
                 new MapSqlParameterSource()
                         .addValue("prId", request.prId())
                         .addValue("ticketId", request.ticketId())
-                        .addValue("reviewerMemberKey", request.reviewerMemberKey())
                         .addValue("state", request.state())
                         .addValue("submittedAt", request.submittedAt())
-                        .addValue("submittedBy", request.submittedBy())
                         .addValue("commentCount", request.commentCount())
                         .addValue("collectedAt", request.collectedAt())
                         .addValue("actor", SYSTEM_ACTOR),
@@ -499,7 +477,7 @@ public class GitPrMetadataCollectorJdbcAdapter implements GitPrMetadataCollector
     public void insertReviewComment(ReviewCommentUpsert request) {
         jdbc.update("""
                 INSERT INTO tbl_fact_review_comment (
-                    review_id, pr_id, ticket_id, comment_summary,
+                    review_id, pr_id, ticket_id, comment_hash,
                     file_path_hash, line_number, created_by, updated_by
                 )
                 VALUES (

@@ -7,82 +7,80 @@ import java.util.UUID;
 
 public interface TestEvidencePersistencePort {
 
-        record PlannedTestCaseRecord(
-                        UUID artifactSnapshotId,
-                        UUID ticketId,
-                        String testCaseKey,
-                        String testCaseName,
-                        OffsetDateTime collectedAt) {
-        }
+    record PlannedTestCaseRecord(
+            UUID artifactSnapshotId,
+            UUID ticketId,
+            String testCaseKey,
+            String testCaseName,
+            OffsetDateTime collectedAt) {
+    }
 
-        record TestCaseResultRecord(
-                        UUID ticketId,
-                        String testCaseKey,
-                        String status,
-                        String failureSummary,
-                        UUID testRunId) {
-        }
+    record TestCaseResultRecord(
+            UUID ticketId,
+            String testCaseKey,
+            String status,
+            String failureSummary,
+            UUID testRunId) {
+    }
 
-        record TestCaseAcRecord(
-                        UUID testCaseId,
-                        UUID ticketId,
-                        String acKey) {
-        }
+    record TestCaseAcRecord(
+            UUID testCaseId,
+            UUID ticketId,
+            String acKey) {
+    }
 
-        void replacePlannedCoverage(UUID snapshotId, UUID ticketId, String acTextHash, List<String> acKeys);
+    void replacePlannedCoverage(UUID snapshotId, UUID ticketId, String acTextHash, List<String> acKeys);
 
-        void upsertPlannedTestCases(List<PlannedTestCaseRecord> records);
+    void upsertPlannedTestCases(List<PlannedTestCaseRecord> records);
 
-        void updateTestCaseResults(List<TestCaseResultRecord> records);
+    void updateTestCaseResults(List<TestCaseResultRecord> records);
 
-        void upsertTestCaseAcMappings(List<TestCaseAcRecord> records);
+    void upsertTestCaseAcMappings(List<TestCaseAcRecord> records);
 
-        void linkTestCasesToPlannedCoverage(UUID ticketId);
+    void linkTestCasesToPlannedCoverage(UUID ticketId);
 
-        void updateExecutedCoverageFromJunction(UUID ticketId, UUID testRunId, UUID artifactSnapshotId);
+    void updateExecutedCoverageFromJunction(UUID ticketId, UUID testRunId, UUID artifactSnapshotId);
 
-        void deleteTestEvidenceByTicketId(UUID ticketId);
+    TestRunRecord upsertTestRun(TestRunRecord testRunRecord);
 
-        TestRunRecord upsertTestRun(TestRunRecord testRunRecord);
+    List<ExecutedCoverageRecord> upsertExecutedCoverageRows(List<ExecutedCoverageRecord> records);
 
-        List<ExecutedCoverageRecord> upsertExecutedCoverageRows(List<ExecutedCoverageRecord> records);
+    record TestRunRecord(
+            UUID testRunId,
+            UUID repositoryId,
+            UUID ticketId,
+            UUID prId,
+            UUID ciRunId,
+            String externalTestRunId,
+            String testType,
+            String status,
+            int testCount,
+            int passedCount,
+            int failedCount,
+            int skippedCount,
+            Integer durationSeconds,
+            BigDecimal coveragePercent,
+            OffsetDateTime startedAt,
+            OffsetDateTime finishedAt,
+            OffsetDateTime collectedAt) {
+    }
 
-        record TestRunRecord(
-                        UUID testRunId,
-                        UUID repositoryId,
-                        UUID ticketId,
-                        UUID prId,
-                        UUID ciRunId,
-                        String externalTestRunId,
-                        String testType,
-                        String status,
-                        int testCount,
-                        int passedCount,
-                        int failedCount,
-                        int skippedCount,
-                        Integer durationSeconds,
-                        BigDecimal coveragePercent,
-                        OffsetDateTime startedAt,
-                        OffsetDateTime finishedAt,
-                        OffsetDateTime collectedAt) {
-        }
-
-        record ExecutedCoverageRecord(
-                        UUID testCaseId,
-                        UUID testRunId,
-                        UUID ticketId,
-                        UUID repositoryId,
-                        UUID ciRunId,
-                        UUID artifactSnapshotId,
-                        String testCaseKey,
-                        String testCaseNameHash,
-                        String acReference,
-                        String testCaseStatus,
-                        String coverageStatus,
-                        Integer durationMs,
-                        String failureSummary,
-                        boolean flakyCandidateFlag,
-                        String acTextHash,
-                        OffsetDateTime collectedAt) {
-        }
+    record ExecutedCoverageRecord(
+            UUID testCaseId,
+            UUID testRunId,
+            UUID ticketId,
+            UUID repositoryId,
+            UUID ciRunId,
+            UUID artifactSnapshotId,
+            String testCaseKey,
+            String testCaseNameHash,
+            String acReference,
+            String testCaseStatus,
+            String coverageStatus,
+            Integer durationMs,
+            String failureSummary,
+            boolean flakyCandidateFlag,
+            String acTextHash,
+            OffsetDateTime collectedAt) {
+    }
 }

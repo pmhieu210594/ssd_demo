@@ -2,7 +2,6 @@ package com.sdd.platform.web.dto;
 
 import com.sdd.platform.application.usecase.common.PageResult;
 import com.sdd.platform.domain.model.Customer;
-import com.sdd.platform.web.validation.NoXssFields;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -65,7 +64,6 @@ public final class CustomerDtos {
         }
     }
 
-    @NoXssFields
     public record CreateCustomerRequest(
             UUID organizationId,
             String customerCode,
@@ -74,7 +72,6 @@ public final class CustomerDtos {
     ) {
     }
 
-    @NoXssFields
     public record UpdateCustomerRequest(
             UUID organizationId,
             String customerCode,

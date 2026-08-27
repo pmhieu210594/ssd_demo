@@ -4,7 +4,6 @@ import com.sdd.platform.application.usecase.governance.CustomerService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.CustomerDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,7 +49,7 @@ public class CustomerController {
 
         @PostMapping
         public ResponseEntity<CustomerDtos.CustomerDto> create(
-                        @Valid @RequestBody CustomerDtos.CreateCustomerRequest request,
+                        @RequestBody CustomerDtos.CreateCustomerRequest request,
                         @CurrentUser AppUser caller) {
                 return ResponseEntity.status(HttpStatus.OK).body(
                                 CustomerDtos.CustomerDto.from(service.create(
@@ -64,7 +63,7 @@ public class CustomerController {
         @PutMapping("/{customerId}")
         public CustomerDtos.CustomerDto update(
                         @PathVariable UUID customerId,
-                        @Valid @RequestBody CustomerDtos.UpdateCustomerRequest request,
+                        @RequestBody CustomerDtos.UpdateCustomerRequest request,
                         @CurrentUser AppUser caller) {
                 return CustomerDtos.CustomerDto.from(service.update(
                                 customerId,

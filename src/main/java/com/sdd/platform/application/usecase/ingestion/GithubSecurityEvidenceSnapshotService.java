@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class GithubSecurityEvidenceSnapshotService {
@@ -36,9 +37,9 @@ public class GithubSecurityEvidenceSnapshotService {
     private final ObjectMapper objectMapper;
 
     public GithubSecurityEvidenceSnapshotService(AppProperties props,
-            ArtifactScannerSourcePort artifactScannerSourcePort,
-            SecurityEvidenceIngestService ingestService,
-            ObjectMapper objectMapper) {
+                                                 ArtifactScannerSourcePort artifactScannerSourcePort,
+                                                 SecurityEvidenceIngestService ingestService,
+                                                 ObjectMapper objectMapper) {
         this.props = props;
         this.artifactScannerSourcePort = artifactScannerSourcePort;
         this.ingestService = ingestService;
@@ -46,11 +47,11 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     public Result collectFromPullRequest(String repositoryFullName,
-            String branchName,
-            String revision,
-            Integer pullRequestNumber,
-            List<String> changedFilePaths,
-            String deliveryId) {
+                                         String branchName,
+                                         String revision,
+                                         Integer pullRequestNumber,
+                                         List<String> changedFilePaths,
+                                         String deliveryId) {
         return collect(repositoryFullName, branchName, revision, pullRequestNumber, changedFilePaths,
                 WORKFLOW_RUN_ID_PREFIX + (deliveryId == null || deliveryId.isBlank() ? revision : deliveryId.trim()),
                 null,
@@ -60,27 +61,27 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     public Result collectFromWorkflowJob(String repositoryFullName,
-            String branchName,
-            String revision,
-            Integer pullRequestNumber,
-            String workflowRunId,
-            String workflowJobId,
-            String workflowJobName,
-            String deliveryId) {
+                                         String branchName,
+                                         String revision,
+                                         Integer pullRequestNumber,
+                                         String workflowRunId,
+                                         String workflowJobId,
+                                         String workflowJobName,
+                                         String deliveryId) {
         return collect(repositoryFullName, branchName, revision, pullRequestNumber, List.of(),
                 workflowRunId, workflowJobId, workflowJobName, deliveryId, true);
     }
 
     private Result collect(String repositoryFullName,
-            String branchName,
-            String revision,
-            Integer pullRequestNumber,
-            List<String> changedFilePaths,
-            String workflowRunId,
-            String workflowJobId,
-            String workflowJobName,
-            String deliveryId,
-            boolean includeSafetyPackWhenMissingSourceDir) {
+                           String branchName,
+                           String revision,
+                           Integer pullRequestNumber,
+                           List<String> changedFilePaths,
+                           String workflowRunId,
+                           String workflowJobId,
+                           String workflowJobName,
+                           String deliveryId,
+                           boolean includeSafetyPackWhenMissingSourceDir) {
         try {
             if (repositoryFullName == null || repositoryFullName.isBlank()) {
                 return new Result("missing-repository", 0);
@@ -89,16 +90,15 @@ public class GithubSecurityEvidenceSnapshotService {
                 return new Result("missing-revision", 0);
             }
 
-            ArtifactScannerSourcePort.ResolvedRevision resolvedRevision = artifactScannerSourcePort
-                    .resolveRevision(repositoryFullName, revision);
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree = artifactScannerSourcePort
-                    .listTree(repositoryFullName, resolvedRevision.revisionSha());
+            ArtifactScannerSourcePort.ResolvedRevision resolvedRevision =
+                    artifactScannerSourcePort.resolveRevision(repositoryFullName, revision);
+            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree =
+                    artifactScannerSourcePort.listTree(repositoryFullName, resolvedRevision.revisionSha());
 
-            List<String> safeChangedPaths = changedFilePaths == null ? List.of()
-                    : changedFilePaths.stream()
-                            .filter(path -> path != null && !path.isBlank())
-                            .distinct()
-                            .toList();
+            List<String> safeChangedPaths = changedFilePaths == null ? List.of() : changedFilePaths.stream()
+                    .filter(path -> path != null && !path.isBlank())
+                    .distinct()
+                    .toList();
 
             Map<String, Object> payload = buildPayload(
                     repositoryFullName,
@@ -111,7 +111,8 @@ public class GithubSecurityEvidenceSnapshotService {
                     workflowJobId,
                     workflowJobName,
                     deliveryId,
-                    includeSafetyPackWhenMissingSourceDir);
+                    includeSafetyPackWhenMissingSourceDir
+            );
             if (payload == null) {
                 return new Result("ignored:no-security-evidence", 0);
             }
@@ -128,16 +129,16 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private Map<String, Object> buildPayload(String repositoryFullName,
-            String branchName,
-            String commitSha,
-            Integer pullRequestNumber,
-            List<String> changedFilePaths,
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
-            String workflowRunId,
-            String workflowJobId,
-            String workflowJobName,
-            String deliveryId,
-            boolean includeSafetyPackWhenMissingSourceDir) {
+                                             String branchName,
+                                             String commitSha,
+                                             Integer pullRequestNumber,
+                                             List<String> changedFilePaths,
+                                             Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
+                                             String workflowRunId,
+                                             String workflowJobId,
+                                             String workflowJobName,
+                                             String deliveryId,
+                                             boolean includeSafetyPackWhenMissingSourceDir) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("repositoryNameMasked", repositoryFullName);
         payload.put("branchName", branchName == null ? "" : branchName.trim());
@@ -162,8 +163,7 @@ public class GithubSecurityEvidenceSnapshotService {
         scans.add(buildSecurityScan(repositoryFullName, "SCA", "Trivy", "trivy", changedFilePaths, tree));
         payload.put("scans", scans);
 
-        Map<String, Object> safetyPack = buildSafetyPack(repositoryFullName, branchName, commitSha, tree,
-                includeSafetyPackWhenMissingSourceDir);
+        Map<String, Object> safetyPack = buildSafetyPack(repositoryFullName, branchName, commitSha, tree, includeSafetyPackWhenMissingSourceDir);
         if (safetyPack != null) {
             payload.put("safetyPack", safetyPack);
         }
@@ -177,11 +177,11 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private Map<String, Object> buildSecurityScan(String repositoryFullName,
-            String scanType,
-            String scannerName,
-            String scanTool,
-            List<String> changedFilePaths,
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree) {
+                                                  String scanType,
+                                                  String scannerName,
+                                                  String scanTool,
+                                                  List<String> changedFilePaths,
+                                                  Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree) {
         List<String> sourcePaths = changedFilePaths == null || changedFilePaths.isEmpty()
                 ? new ArrayList<>(tree.keySet())
                 : changedFilePaths;
@@ -232,10 +232,10 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private Map<String, Object> buildSafetyPack(String repositoryFullName,
-            String branchName,
-            String commitSha,
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
-            boolean includeEvenIfSourceDirMissing) {
+                                                String branchName,
+                                                String commitSha,
+                                                Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
+                                                boolean includeEvenIfSourceDirMissing) {
         String sourceDir = resolveSourceDir(tree);
         if (sourceDir == null && !includeEvenIfSourceDirMissing) {
             return null;
@@ -243,20 +243,17 @@ public class GithubSecurityEvidenceSnapshotService {
 
         boolean claudeMdExists = sourceDir != null && tree.containsKey(sourceDir + "CLAUDE.md");
         boolean settingsJsonExists = sourceDir != null && tree.containsKey(sourceDir + "settings.json");
-        boolean rulesExists = sourceDir != null
-                && tree.keySet().stream().anyMatch(path -> path.startsWith(sourceDir + "rules/"));
+        boolean rulesExists = sourceDir != null && tree.keySet().stream().anyMatch(path -> path.startsWith(sourceDir + "rules/"));
         long rulesCount = tree.keySet().stream()
                 .filter(path -> sourceDir != null && path.startsWith(sourceDir + "rules/"))
                 .filter(path -> path.toLowerCase(Locale.ROOT).endsWith(".md"))
                 .count();
 
         SettingsSummary summary = parseSettings(repositoryFullName, tree, sourceDir);
-        String missingItemsSummary = buildMissingItemsSummary(claudeMdExists, settingsJsonExists, rulesExists,
-                (int) rulesCount);
+        String missingItemsSummary = buildMissingItemsSummary(claudeMdExists, settingsJsonExists, rulesExists, (int) rulesCount);
         String scanStatus = sourceDir == null
                 ? "MISSING"
-                : computeSafetyPackStatus(summary.parseStatus(), claudeMdExists, settingsJsonExists, rulesExists,
-                        (int) rulesCount);
+                : computeSafetyPackStatus(summary.parseStatus(), claudeMdExists, settingsJsonExists, rulesExists, (int) rulesCount);
         String contentHash = computeContentHash(repositoryFullName, tree, sourceDir);
 
         Map<String, Object> safetyPack = new LinkedHashMap<>();
@@ -317,8 +314,8 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private SettingsSummary parseSettings(String repositoryFullName,
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
-            String sourceDir) {
+                                          Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
+                                          String sourceDir) {
         ArtifactScannerSourcePort.GitHubTreeEntry entry = tree.get(sourceDir + "settings.json");
         if (entry == null || entry.sha() == null || entry.sha().isBlank()) {
             return SettingsSummary.missing();
@@ -329,16 +326,17 @@ public class GithubSecurityEvidenceSnapshotService {
                     countPermissionEntries(root, "deny"),
                     countPermissionEntries(root, "ask"),
                     countPermissionEntries(root, "allow"),
-                    "OK");
+                    "OK"
+            );
         } catch (Exception ex) {
             return SettingsSummary.error();
         }
     }
 
     private String buildMissingItemsSummary(boolean claudeMdExists,
-            boolean settingsJsonExists,
-            boolean rulesExists,
-            int rulesCount) {
+                                            boolean settingsJsonExists,
+                                            boolean rulesExists,
+                                            int rulesCount) {
         List<String> missing = new ArrayList<>();
         if (!claudeMdExists) {
             missing.add("CLAUDE.md");
@@ -355,10 +353,10 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private String computeSafetyPackStatus(String parseStatus,
-            boolean claudeMdExists,
-            boolean settingsJsonExists,
-            boolean rulesExists,
-            int rulesCount) {
+                                          boolean claudeMdExists,
+                                          boolean settingsJsonExists,
+                                          boolean rulesExists,
+                                          int rulesCount) {
         if ("ERROR".equals(parseStatus)) {
             return "PARSE_ERROR";
         }
@@ -369,8 +367,8 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private String computeContentHash(String repositoryFullName,
-            Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
-            String sourceDir) {
+                                      Map<String, ArtifactScannerSourcePort.GitHubTreeEntry> tree,
+                                      String sourceDir) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             updateDigest(digest, readBlobAsBytes(repositoryFullName, tree.get(sourceDir + "CLAUDE.md")));
@@ -446,10 +444,8 @@ public class GithubSecurityEvidenceSnapshotService {
     }
 
     private ScanCounts pathBasedFallback(String scanType, List<String> evidencePaths) {
-        boolean hasFailHint = evidencePaths.stream()
-                .anyMatch(path -> containsAny(normalizePath(path), "fail", "finding", "alert", "critical", "issue"));
-        boolean hasWarnHint = evidencePaths.stream()
-                .anyMatch(path -> containsAny(normalizePath(path), "warn", "warning", "high"));
+        boolean hasFailHint = evidencePaths.stream().anyMatch(path -> containsAny(normalizePath(path), "fail", "finding", "alert", "critical", "issue"));
+        boolean hasWarnHint = evidencePaths.stream().anyMatch(path -> containsAny(normalizePath(path), "warn", "warning", "high"));
 
         if ("SECRET".equals(scanType)) {
             return hasFailHint ? new ScanCounts(1, 1, 0, 0, 0, 0, 0) : new ScanCounts();
@@ -488,11 +484,9 @@ public class GithubSecurityEvidenceSnapshotService {
     private boolean matchesScanType(String path, String scanType) {
         String normalized = normalizePath(path);
         return switch (scanType) {
-            case "SECRET" -> containsAny(normalized, "secret", "secrets", "gitleaks", "leaks", "credential",
-                    "credentials", "token", "secret-scan");
+            case "SECRET" -> containsAny(normalized, "secret", "secrets", "gitleaks", "leaks", "credential", "credentials", "token", "secret-scan");
             case "SAST" -> containsAny(normalized, "sast", "semgrep", "codeql", "static-analysis", "source-scan");
-            case "SCA" -> containsAny(normalized, "sca", "trivy", "dependency", "dependencies", "sbom", "package-audit",
-                    "license-scan");
+            case "SCA" -> containsAny(normalized, "sca", "trivy", "dependency", "dependencies", "sbom", "package-audit", "license-scan");
             default -> false;
         };
     }
@@ -594,8 +588,7 @@ public class GithubSecurityEvidenceSnapshotService {
             bytes = artifactScannerSourcePort.readBlob(repositoryFullName, blobSha);
         } catch (WebClientResponseException ex) {
             if (isSkippableBlobError(ex)) {
-                log.warn("Skipping missing GitHub blob repo={} sha={}: {}", repositoryFullName, blobSha,
-                        ex.getMessage());
+                log.warn("Skipping missing GitHub blob repo={} sha={}: {}", repositoryFullName, blobSha, ex.getMessage());
                 return "";
             }
             throw ex;
@@ -701,12 +694,12 @@ public class GithubSecurityEvidenceSnapshotService {
         }
 
         private ScanCounts(int findingCount,
-                int unresolvedCount,
-                int criticalCount,
-                int highCount,
-                int mediumCount,
-                int lowCount,
-                int infoCount) {
+                           int unresolvedCount,
+                           int criticalCount,
+                           int highCount,
+                           int mediumCount,
+                           int lowCount,
+                           int infoCount) {
             this.findingCount = findingCount;
             this.unresolvedCount = unresolvedCount;
             this.criticalCount = criticalCount;

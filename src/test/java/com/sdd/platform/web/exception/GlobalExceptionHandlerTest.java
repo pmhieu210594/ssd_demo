@@ -4,16 +4,11 @@ import com.sdd.platform.application.exception.AccountTemporarilyUnavailableExcep
 import com.sdd.platform.application.exception.AuthenticationFailedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.validation.BindingResult;
-import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class GlobalExceptionHandlerTest {
 
@@ -44,9 +39,6 @@ class GlobalExceptionHandlerTest {
     @Test
     void validation_errors_return_validation_code() {
         MethodArgumentNotValidException exception = mock(MethodArgumentNotValidException.class);
-        BindingResult bindingResult = mock(BindingResult.class);
-        when(exception.getBindingResult()).thenReturn(bindingResult);
-        when(bindingResult.getAllErrors()).thenReturn(List.of());
 
         var response = handler.handleValidation(exception);
 
@@ -54,22 +46,5 @@ class GlobalExceptionHandlerTest {
         assertNotNull(response.getBody());
         assertEquals("VALIDATION_ERROR", response.getBody().error());
         assertEquals("VALIDATION_ERROR", response.getBody().message());
-    }
-
-    @Test
-    void xss_violations_return_unsafe_input_code() {
-        MethodArgumentNotValidException exception = mock(MethodArgumentNotValidException.class);
-        BindingResult bindingResult = mock(BindingResult.class);
-        when(exception.getBindingResult()).thenReturn(bindingResult);
-        when(bindingResult.getAllErrors()).thenReturn(List.of(
-                new ObjectError("createOrganizationRequest",
-                        new String[] {"NoXssFields.createOrganizationRequest", "NoXssFields"}, null, "UNSAFE_INPUT")));
-
-        var response = handler.handleValidation(exception);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("UNSAFE_INPUT", response.getBody().error());
-        assertEquals("UNSAFE_INPUT", response.getBody().message());
     }
 }

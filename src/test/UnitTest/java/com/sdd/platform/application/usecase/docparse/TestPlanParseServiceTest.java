@@ -1,6 +1,7 @@
 package com.sdd.platform.application.usecase.docparse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdd.platform.application.port.out.persistence.AcCoveragePort;
 import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.DocParsePersistencePort;
 import com.sdd.platform.application.port.out.persistence.TestEvidencePersistencePort;
@@ -33,65 +34,70 @@ class TestPlanParseServiceTest {
 
     private TestPlanParseService service;
     private InMemoryDocParsePersistencePort repository;
+    private InMemoryAcCoveragePort acCoveragePort;
     private TestEvidencePersistencePort testEvidencePersistencePort;
     private CiRunRepositoryPort ciRunRepositoryPort;
     private UUID projectId;
     private UUID repositoryId;
     private UUID ticketId;
+    private TestCoverageValidationService coverageValidationService;
 
     @BeforeEach
     void setUp() {
+        coverageValidationService = new TestCoverageValidationService();
         projectId = UUID.randomUUID();
         repositoryId = UUID.randomUUID();
         ticketId = UUID.randomUUID();
         repository = new InMemoryDocParsePersistencePort();
+        acCoveragePort = new InMemoryAcCoveragePort();
         testEvidencePersistencePort = Mockito.mock(TestEvidencePersistencePort.class);
         ciRunRepositoryPort = Mockito.mock(CiRunRepositoryPort.class);
         Mockito.when(ciRunRepositoryPort.findLatestCiRunByRepositoryAndTicket(Mockito.any(), Mockito.any()))
                 .thenReturn(Optional.empty());
         service = new TestPlanParseService(new ArtifactNormalizer(), repository, new ObjectMapper(),
-                testEvidencePersistencePort, ciRunRepositoryPort);
+                coverageValidationService, acCoveragePort, testEvidencePersistencePort, ciRunRepositoryPort);
     }
 
     @Test
     void parse_success_persists_all_sections_and_allows_detail_lookup() {
         ParseResult result = service.parseAndStore(request(fullMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.SUCCESS, result.parseStatus());
         assertNotNull(result.snapshot());
-        assertEquals(7, result.fields().size());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertEquals(11, result.fields().size());
+        assertTrue(result.fields().stream().allMatch(ParseField::presentFlag));
         assertEquals(1, repository.snapshotCount());
         assertTrue(service.latestSnapshot(ticketId, ParseMode.DRAFT).isPresent());
 
         UUID snapshotId = result.snapshot().artifactSnapshotId();
         ParseResult detail = service.detail(snapshotId).orElseThrow();
-        assertEquals(ParseStatus.NOT_FOUND, detail.parseStatus());
-        assertEquals(7, detail.fields().size());
+        assertEquals(ParseStatus.SUCCESS, detail.parseStatus());
+        assertEquals(11, detail.fields().size());
         assertEquals(result.sourceHash(), detail.sourceHash());
         Mockito.verify(testEvidencePersistencePort).replacePlannedCoverage(
                 Mockito.any(),
                 Mockito.eq(ticketId),
                 Mockito.any(),
-                Mockito.argThat(List::isEmpty));
+                Mockito.argThat(list -> list.contains("AC-1")));
     }
 
     @Test
     void parse_missing_required_section_returns_partial_and_records_missing_field() {
         ParseResult result = service.parseAndStore(request(missingPurposeMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
         assertNotNull(result.snapshot());
-        assertFalse(result.missingFields().isEmpty());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertTrue(result.missingFields().contains("purpose"));
+        assertTrue(result.fields().stream()
+                .anyMatch(f -> "purpose".equals(f.sectionKey()) && !f.presentFlag()));
     }
 
     @Test
     void parse_duplicate_heading_returns_partial() {
         ParseResult result = service.parseAndStore(request(duplicatePriorityMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("duplicate")));
     }
 
     @Test
@@ -138,7 +144,7 @@ class TestPlanParseServiceTest {
         return new ParseRequest(
                 projectId, repositoryId, ticketId, ParseMode.DRAFT,
                 "docs/changes/PARSE-TEST-PLAN-RESULTS/test-plan.md",
-                sourceText, "test-plan-parser", "v1", "trace-1", "NOT_APPLICABLE", null, null);
+                sourceText, "test-plan-parser", "v1", "trace-1", "NOT_APPLICABLE");
     }
 
     private String fullMarkdown() {
@@ -238,7 +244,7 @@ class TestPlanParseServiceTest {
                     snapshot.parseMode(), snapshot.parseStatus(), snapshot.sourcePath(),
                     snapshot.contentHash(), snapshot.schemaVersion(), snapshot.schemaValid(),
                     snapshot.templateEmptyFlag(), snapshot.requiredFieldsMissing(),
-                    snapshot.parsedSummaryJson(), snapshot.parserVersion(), null, null,
+                    snapshot.parsedSummaryJson(), snapshot.parserVersion(),
                     snapshot.collectedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC) : snapshot.collectedAt());
             snapshotsByKey.put(key, saved);
             snapshotsById.put(snapshotId, saved);
@@ -295,16 +301,82 @@ class TestPlanParseServiceTest {
         }
     }
 
+    private static final class InMemoryAcCoveragePort implements AcCoveragePort {
+        private List<String> acKeys = new ArrayList<>();
+
+        void setAcKeys(String... keys) {
+            this.acKeys = List.of(keys);
+        }
+
+        @Override
+        public List<String> findActiveAcKeys(UUID ticketId) {
+            return acKeys;
+        }
+    }
+
+    @Test
+    void coverage_partial_when_specpack_ac_not_in_matrix() {
+        acCoveragePort.setAcKeys("AC-1", "AC-2");
+
+        ParseResult result = service.parseAndStore(request(fullMarkdown()));
+
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.equals("AC_NOT_COVERED:AC-2")));
+        assertFalse(result.warnings().stream().anyMatch(w -> w.equals("AC_NOT_COVERED:AC-1")));
+    }
+
+    @Test
+    void coverage_success_when_all_specpack_acs_present_in_matrix() {
+        acCoveragePort.setAcKeys("AC-1");
+
+        ParseResult result = service.parseAndStore(request(fullMarkdown()));
+
+        assertEquals(ParseStatus.SUCCESS, result.parseStatus());
+        assertTrue(result.warnings().stream().noneMatch(w -> w.startsWith("AC_NOT_COVERED")));
+        assertTrue(result.warnings().stream().noneMatch(w -> w.startsWith("UNKNOWN_AC_REFERENCE")));
+    }
+
+    @Test
+    void coverage_partial_when_matrix_references_ac_not_in_specpack() {
+        acCoveragePort.setAcKeys("AC-99");
+
+        ParseResult result = service.parseAndStore(request(fullMarkdown()));
+
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.equals("UNKNOWN_AC_REFERENCE:AC-1")));
+    }
+
+    @Test
+    void coverage_skipped_when_specpack_has_no_acs_yet() {
+        // acCoveragePort returns empty list (default) — spec-pack not yet parsed
+        ParseResult result = service.parseAndStore(request(fullMarkdown()));
+
+        assertEquals(ParseStatus.SUCCESS, result.parseStatus());
+        assertTrue(result.warnings().stream().noneMatch(w -> w.startsWith("AC_NOT_COVERED")));
+    }
+
+    @Test
+    void coverage_violations_trigger_data_quality_write_with_schema_violation_count() {
+        acCoveragePort.setAcKeys("AC-1", "AC-2");
+
+        service.parseAndStore(request(fullMarkdown()));
+
+        assertEquals(1, repository.dataQualityWrites.size());
+        DocParseModels.ParseDataQuality dq = repository.dataQualityWrites.get(0);
+        assertTrue(dq.schemaViolationCount() > 0);
+        assertTrue(dq.errorSummary().contains("AC_NOT_COVERED:AC-2"));
+    }
+
     @Test
     void planned_test_cases_seeded_from_section5_with_tc_id() {
         service.parseAndStore(request(fullMarkdown()));
 
-        Mockito.verify(testEvidencePersistencePort).replacePlannedCoverage(
-                Mockito.any(),
-                Mockito.eq(ticketId),
-                Mockito.any(),
-                Mockito.argThat(List::isEmpty));
-        Mockito.verify(testEvidencePersistencePort, Mockito.never()).upsertPlannedTestCases(Mockito.anyList());
-        Mockito.verify(testEvidencePersistencePort, Mockito.never()).upsertTestCaseAcMappings(Mockito.anyList());
+        Mockito.verify(testEvidencePersistencePort).upsertPlannedTestCases(
+                Mockito.argThat(list -> list.size() == 1
+                        && "TC-1".equals(list.get(0).testCaseKey())
+                        && "Parse test".equals(list.get(0).testCaseName())));
+        Mockito.verify(testEvidencePersistencePort).upsertTestCaseAcMappings(
+                Mockito.argThat(list -> list.size() == 1
+                        && "AC-1".equals(list.get(0).acKey())));
     }
 }

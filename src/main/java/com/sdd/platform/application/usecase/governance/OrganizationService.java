@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -22,15 +21,11 @@ public class OrganizationService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final String MODULE = "ORGANIZATION";
-    private static final String ENTITY_TYPE = "ORGANIZATION";
 
     private final OrganizationRepositoryPort repository;
-    private final AdminAuditLogService adminAuditLogService;
 
-    public OrganizationService(OrganizationRepositoryPort repository, AdminAuditLogService adminAuditLogService) {
+    public OrganizationService(OrganizationRepositoryPort repository) {
         this.repository = repository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -51,43 +46,35 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public Organization get(UUID organizationId, AppUser caller) {
         requireAdmin(caller);
-        Organization organization = repository.findById(organizationId)
+        return repository.findById(organizationId)
                 .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
-        return organization;
     }
 
     @Transactional
     public Organization create(String organizationCode, String organizationName, String description, AppUser caller) {
         requireAdmin(caller);
-        try {
-            String normalizedCode = normalizeRequired(organizationCode, 50, "Pages.Organization.Code.Required");
-            String normalizedName = normalizeRequired(organizationName, 255, "Pages.Organization.Name.Required");
-            String normalizedDescription = normalizeOptional(description, 500, "Pages.Organization.Description.MaxLength");
-            String actor = resolveActor(caller);
+        String normalizedCode = normalizeRequired(organizationCode, 50, "Pages.Organization.Code.Required");
+        String normalizedName = normalizeRequired(organizationName, 255, "Pages.Organization.Name.Required");
+        String normalizedDescription = normalizeOptional(description, 500, "Pages.Organization.Description.MaxLength");
+        String actor = resolveActor(caller);
 
-            ensureUniqueCode(normalizedCode, null, false);
-            ensureUniqueName(normalizedName, null);
+        ensureUniqueCode(normalizedCode, null, false);
+        ensureUniqueName(normalizedName, null);
 
-            OffsetDateTime now = OffsetDateTime.now();
-            Organization organization = Organization.builder()
-                    .organizationId(UUID.randomUUID())
-                    .organizationCode(normalizedCode)
-                    .organizationName(normalizedName)
-                    .description(normalizedDescription)
-                    .status(Organization.OrganizationStatus.ACTIVE)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .version(0L)
-                    .build();
-            Organization created = repository.insert(organization);
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getOrganizationId().toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        OffsetDateTime now = OffsetDateTime.now();
+        Organization organization = Organization.builder()
+                .organizationId(UUID.randomUUID())
+                .organizationCode(normalizedCode)
+                .organizationName(normalizedName)
+                .description(normalizedDescription)
+                .status(Organization.OrganizationStatus.ACTIVE)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .version(0L)
+                .build();
+        return repository.insert(organization);
     }
 
     @Transactional
@@ -101,81 +88,66 @@ public class OrganizationService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            Organization existing = repository.findById(organizationId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
-            ensureEditable(existing);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
+        Organization existing = repository.findById(organizationId)
+                .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
+        ensureEditable(existing);
 
-            String normalizedCode = normalizeRequired(organizationCode, 50, "Pages.Organization.Code.Required");
-            String normalizedName = normalizeRequired(organizationName, 255, "Pages.Organization.Name.Required");
-            String normalizedDescription = normalizeOptional(description, 500, "Pages.Organization.Description.MaxLength");
-            Organization.OrganizationStatus normalizedStatus = normalizeStatus(status);
-            String actor = resolveActor(caller);
+        String normalizedCode = normalizeRequired(organizationCode, 50, "Pages.Organization.Code.Required");
+        String normalizedName = normalizeRequired(organizationName, 255, "Pages.Organization.Name.Required");
+        String normalizedDescription = normalizeOptional(description, 500, "Pages.Organization.Description.MaxLength");
+        Organization.OrganizationStatus normalizedStatus = normalizeStatus(status);
+        String actor = resolveActor(caller);
 
-            ensureUniqueCode(normalizedCode, organizationId, true);
-            ensureUniqueName(normalizedName, organizationId);
+        ensureUniqueCode(normalizedCode, organizationId, true);
+        ensureUniqueName(normalizedName, organizationId);
 
-            existing.setOrganizationCode(normalizedCode);
-            existing.setOrganizationName(normalizedName);
-            existing.setDescription(normalizedDescription);
-            existing.setStatus(normalizedStatus);
-            if (normalizedStatus == Organization.OrganizationStatus.DELETED) {
-                existing.setDeletedAt(OffsetDateTime.now());
-                existing.setDeletedBy(actor);
-            } else {
-                existing.setDeletedAt(null);
-                existing.setDeletedBy(null);
-            }
-            existing.setVersion(version);
-            existing.setUpdatedBy(actor);
-            existing.setUpdatedAt(OffsetDateTime.now());
-
-            int affected = repository.update(existing);
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Organization.Conflict.Version");
-            }
-            Organization updated = repository.findById(organizationId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, organizationId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, organizationId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        existing.setOrganizationCode(normalizedCode);
+        existing.setOrganizationName(normalizedName);
+        existing.setDescription(normalizedDescription);
+        existing.setStatus(normalizedStatus);
+        if (normalizedStatus == Organization.OrganizationStatus.DELETED) {
+            existing.setDeletedAt(OffsetDateTime.now());
+            existing.setDeletedBy(actor);
+        } else {
+            existing.setDeletedAt(null);
+            existing.setDeletedBy(null);
         }
+        existing.setVersion(version);
+        existing.setUpdatedBy(actor);
+        existing.setUpdatedAt(OffsetDateTime.now());
+
+        int affected = repository.update(existing);
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Organization.Conflict.Version");
+        }
+        return repository.findById(organizationId)
+                .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
     }
 
     @Transactional
     public Organization softDelete(UUID organizationId, long version, AppUser caller) {
         requireAdmin(caller);
-        try {
-            Organization existing = repository.findById(organizationId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
-            if (existing.isDeleted()) {
-                throw new BusinessRuleException("Pages.Organization.Deleted.AlreadyDeleted");
-            }
-
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            int affected = repository.softDelete(
-                    organizationId,
-                    version,
-                    actor,
-                    now,
-                    actor,
-                    now
-            );
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Organization.Conflict.Version");
-            }
-            Organization deleted = repository.findById(organizationId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, organizationId.toString(), existing);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, organizationId.toString(), "DELETE", ex.getMessage());
-            throw ex;
+        Organization existing = repository.findById(organizationId)
+                .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
+        if (existing.isDeleted()) {
+            throw new BusinessRuleException("Pages.Organization.Deleted.AlreadyDeleted");
         }
+
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        int affected = repository.softDelete(
+                organizationId,
+                version,
+                actor,
+                now,
+                actor,
+                now
+        );
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Organization.Conflict.Version");
+        }
+        return repository.findById(organizationId)
+                .orElseThrow(() -> new NotFoundException("Pages.Organization.NotFound"));
     }
 
     @Transactional

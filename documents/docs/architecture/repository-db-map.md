@@ -46,7 +46,6 @@ and migration files they depend on. Use this file to:
 | `ArtifactRepositoryAdapter` | `infrastructure/persistence/adapter/ArtifactRepositoryAdapter.java` | Find artifacts by ticket; upsert artifact snapshot | `Artifact` |
 | `CiRunRepositoryAdapter` | `infrastructure/persistence/adapter/CiRunRepositoryAdapter.java` | Find CI runs by provider+repository+run+job; upsert by identity | `CiRun` |
 | `ConnectorRunRepositoryAdapter` | `infrastructure/persistence/adapter/ConnectorRunRepositoryAdapter.java` | Save connector execution log; find recent by name | `ConnectorRun` |
-| `DataOpsDashboardJdbcAdapter` | `infrastructure/persistence/adapter/DataOpsDashboardJdbcAdapter.java` | Read-only KPI aggregation for operational dashboard | `DataOpsDashboard` read model |
 | `ProjectRepositoryAdapter` | `infrastructure/persistence/adapter/ProjectRepositoryAdapter.java` | Find project by ID only (read-only in adapter; insert via mapper) | `Project` |
 | `PullRequestRepositoryAdapter` | `infrastructure/persistence/adapter/PullRequestRepositoryAdapter.java` | Find PRs by ticket; upsert by repo+PR number | `PullRequest` |
 | `RepositoryRepositoryAdapter` | `infrastructure/persistence/adapter/RepositoryRepositoryAdapter.java` | Find repositories by project; find by repoKey+hostType for webhook routing | `Repository` |
@@ -73,9 +72,7 @@ and migration files they depend on. Use this file to:
 | `PullRequest` | `domain/model/PullRequest.java` | `pull_request` | V1 table; active |
 | `CiRun` | `domain/model/CiRun.java` | `ci_run` | V1 table; active |
 | `ConnectorRun` | `domain/model/ConnectorRun.java` | `connector_run` | V1 table; active |
-| `DataOpsDashboardJdbcAdapter` | `infrastructure/persistence/adapter/DataOpsDashboardJdbcAdapter.java` | Read-only KPI aggregation for operational dashboard | `DataOpsDashboard` read model |
 | `AcceptanceCriterion` | `domain/model/AcceptanceCriterion.java` | `acceptance_criterion` | V1 table; active |
-| `DataOpsDashboard` | `web/dto` / `application/usecase` read model | `tbl_source_connector`, `tbl_connector_run`, `tbl_fact_data_quality`, `tbl_fact_artifact_snapshot`, `tbl_fact_traceability_link`, `tbl_dim_project`, `tbl_dim_repository` | Read-only dashboard view model backed by existing V4 tables |
 | _(no entity)_ | — | `audit_log` | **Dropped in V3** — no longer in schema |
 | _(no entity)_ | — | `traceability_link` | **Dropped in V3** |
 | _(no entity)_ | — | `evidence_quality_score` | **Dropped in V3** |
@@ -116,7 +113,7 @@ and migration files they depend on. Use this file to:
 |-------------|-------------------|-------|
 | `id BIGSERIAL PK` | `project_id BIGINT FK → project(id) CASCADE` | |
 | | `repo_key VARCHAR(255)` | UNIQUE(project_id, repo_key) |
-| | `host_type VARCHAR(32)` | Values: GITHUB, LOCAL |
+| | `host_type VARCHAR(32)` | Values: GITHUB, GITLAB, LOCAL |
 | | `default_branch VARCHAR(128) DEFAULT 'main'` | |
 | | `created_at TIMESTAMPTZ` | `idx_repo_host(host_type)` |
 
@@ -140,7 +137,7 @@ and migration files they depend on. Use this file to:
 | `id BIGSERIAL PK` | `ticket_id BIGINT FK → ticket(id) CASCADE` | |
 | | `artifact_type VARCHAR(64)` | Values: SPEC_PACK, SOURCES, IMPL_PLAN, REVIEW_CHECKLIST, SELF_REVIEW, TEST_PLAN, TEST_RESULTS, BLACKBOX_TESTCASES, TEST_DATA, REPORT |
 | | `file_path VARCHAR(1024)` | UNIQUE(ticket_id, artifact_type, file_path) |
-| | `content_hash VARCHAR(128)`, `schema_version INTEGER` | nullable; starts at `1` and increments when the file content changes in a pull request |
+| | `content_hash VARCHAR(128)`, `schema_version VARCHAR(32)` | nullable |
 | | `is_template_only BOOLEAN DEFAULT FALSE` | Mapped as `templateOnly` in Java |
 | | `required_fields_missing TEXT` | JSON array as text, e.g. `["scope","ac"]` |
 | | `last_collected_at`, `updated_at TIMESTAMPTZ` | |
@@ -268,7 +265,6 @@ and migration files they depend on. Use this file to:
 | `OrganizationMapper.findPage` | `OrganizationMapper.xml` | `tbl_dim_organization` | Organization list/search | Active-scope filtering must respect deleted rows |
 | `TeamMapper.findPage` | `TeamMapper.xml` | `tbl_dim_team` | Team list/search | Active-scope filtering must respect deleted rows and code uniqueness |
 | `TeamMapper.findMembers` | `TeamMapper.xml` | `tbl_team_member` | Team detail active members | Must exclude inactive memberships by default |
-| `DataOpsDashboardJdbcAdapter.*` | `DataOpsDashboardJdbcAdapter` | `tbl_source_connector`, `tbl_connector_run`, `tbl_fact_data_quality`, `tbl_fact_artifact_snapshot`, `tbl_fact_traceability_link`, `tbl_dim_project`, `tbl_dim_repository` | Read-only aggregation for connector status, parse errors, missing evidence, freshness, and broken traceability | Provisional KPI formulas and source joins must stay aligned with Product decisions |
 
 ---
 
@@ -488,40 +484,3 @@ This snapshot records the implemented Team table/mapper state.
 - `tbl_dim_team` and `tbl_team_member` use additive changes and active-scope uniqueness.
 - Membership role data lives on `tbl_team_member`, not on `tbl_dim_member_pseudonym`.
 - Legacy `tbl_dim_member_pseudonym.team_id/role_id` values are not migrated into Team memberships.
-
-## 14. Admin Audit Log Snapshot
-
-This snapshot records the ADMIN-AUDIT-LOG (2026-07) reuse of a previously dormant table instead of a new table.
-
-### Repository / DAO
-
-| Repository / Adapter | Path | Responsibility | Related Entity |
-|---|---|---|---|
-| `AdminAuditLogJdbcAdapter` | `infrastructure/persistence/adapter/AdminAuditLogJdbcAdapter.java` | Insert audit entries, paginated search, detail lookup | `AdminAuditLogModels` records |
-
-### Entity / Model / Table mapping
-
-| Entity / Model | Path | Table | Note |
-|---|---|---|---|
-| `AdminAuditLogModels` (entry/filter/list-item/detail records) | `application/usecase/governance/AdminAuditLogModels.java` | `tbl_fact_access_log` | **Reused an existing, previously-unused table** discovered during Phase 5 source verification — do not create a new `tbl_admin_audit_log`; earlier source-discovery phases missed that this table already existed for this purpose (see `failure-mode-index.md` note on dormant-table discovery timing) |
-
-### Table / Column summary
-
-#### `tbl_fact_access_log` (altered by `V500`)
-
-| Key Columns | Important Columns | Notes |
-|---|---|---|
-| `access_log_id UUID PK` | `actor_user_id` (nullable), `module`, `operation_type` | `actor_user_id` is nullable by human decision — some events (e.g. failed login with unknown username) have no resolvable actor |
-| | `before_value`, `after_value` (JSONB) | Masked via whitelist-drop (see `docs/standards/security.md`) before persistence; `after_value` is null for DELETE by design |
-| | `occurred_at` | Sort key for list queries (`DESC`) |
-| | append-only trigger | Enforced via `BEFORE UPDATE OR DELETE`, not `REVOKE`/`GRANT` (see `docs/standards/database.md`) |
-
-### Migration mapping
-
-| Migration | Path | Tables Changed | Rollback Available? |
-|---|---|---|---|
-| `V500__admin_audit_log.sql` | `db/migration/` | Alters `tbl_fact_access_log` (renames, new columns, indexes, append-only trigger); does not touch `V4__init_schema_v2.sql` | No — additive/alter only |
-
-### Compatibility / backfill note
-
-- Confirm the target table against the current schema (not just requirement text) before adding a new fact/dim table for a similar purpose — the original requirement text referenced `tbl_dim_member`/`tbl_dim_user`, which do not match the confirmed schema (`tbl_auth_user_account`).

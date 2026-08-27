@@ -2,7 +2,6 @@ package com.sdd.platform.application.usecase.governance;
 
 import com.sdd.platform.application.exception.AccountTemporarilyUnavailableException;
 import com.sdd.platform.application.exception.AuthenticationFailedException;
-import com.sdd.platform.application.exception.ForbiddenException;
 import com.sdd.platform.application.port.out.persistence.AuthTokenSessionRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.AuthUserAccountRepositoryPort;
 import com.sdd.platform.config.AppProperties;
@@ -49,8 +48,7 @@ class AuthServiceTest {
                 null
         );
 
-        service = new AuthService(accountRepository, tokenSessionRepository, tokenService, props,
-                Mockito.mock(AdminAuditLogService.class));
+        service = new AuthService(accountRepository, tokenSessionRepository, tokenService, props);
     }
 
     @Test
@@ -121,21 +119,6 @@ class AuthServiceTest {
     }
 
     @Test
-    void login_rejects_deleted_roles() {
-        AuthUserAccount account = userAccount("alice", true, "EDITOR", "alice@example.com");
-        account.setRoleDeleteFlag(1);
-        when(accountRepository.findByUsername("alice")).thenReturn(Optional.of(account));
-
-        ForbiddenException ex = assertThrows(
-                ForbiddenException.class,
-                () -> service.login("alice", "secret")
-        );
-
-        assertEquals("auth.no_role_assigned", ex.getMessage());
-        verifyNoInteractions(tokenService);
-    }
-
-    @Test
     void logout_revokes_token_session_when_principal_exists() {
         AuthUserContext user = AuthUserContext.builder()
                 .userAccountId(UUID.randomUUID())
@@ -163,7 +146,6 @@ class AuthServiceTest {
                 .passwordHash(passwordEncoder.encode("secret"))
                 .active(active)
                 .roleName(role)
-                .roleDeleteFlag(0)
                 .accessScopes(List.of("role:1"))
                 .build();
     }

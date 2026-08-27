@@ -42,11 +42,11 @@ class SpecPackMarkdownParserControllerTest {
         assertThat(result.get("parseStatus")).isEqualTo("PARTIAL");
         assertThat(result.get("artifactStatus")).isEqualTo("present");
         assertThat(result.get("artifactExists")).isEqualTo(Boolean.TRUE);
-        assertThat(castList(result.get("acceptanceCriteria"))).hasSize(3);
+        assertThat(castList(result.get("acceptanceCriteria"))).hasSize(10);
         assertThat(castList(result.get("warnings")))
                 .extracting(issue -> ((SpecPackMarkdownParser.ParsingIssue) issue).code())
                 .contains("placeholder_detected");
-        assertThat(castMap(result.get("parsedSummary"))).containsEntry("ac_count", 3);
+        assertThat(castMap(result.get("parsedSummary"))).containsEntry("ac_count", 10);
     }
 
     @Test

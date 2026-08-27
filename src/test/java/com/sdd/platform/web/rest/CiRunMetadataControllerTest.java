@@ -30,6 +30,7 @@ class CiRunMetadataControllerTest {
         assertEquals(1, result.size());
         assertEquals(rows.get(0).ciRunId(), result.get(0).ciRunId());
         assertEquals(rows.get(0).workflowName(), result.get(0).workflowName());
+        assertEquals(rows.get(0).jobName(), result.get(0).jobName());
         assertEquals(rows.get(0).ciUrl(), result.get(0).ciUrl());
         verify(service).recent(25, admin);
     }
@@ -55,6 +56,8 @@ class CiRunMetadataControllerTest {
                 "GITHUB_ACTIONS",
                 "CI",
                 "build",
+                "27660577827",
+                "77123456789",
                 "https://github.com/acme/widget/actions/runs/27660577827/job/77123456789",
                 "SUCCESS",
                 OffsetDateTime.parse("2026-06-17T02:00:00Z"),

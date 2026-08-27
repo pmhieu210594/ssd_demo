@@ -12,7 +12,7 @@ public class Artifact {
     private ArtifactType artifactType;
     private String filePath;
     private String contentHash;
-    private Integer schemaVersion;
+    private String schemaVersion;
     private boolean templateOnly;
 
     /** JSON array stored as text, e.g. '["scope","ac"]'. */

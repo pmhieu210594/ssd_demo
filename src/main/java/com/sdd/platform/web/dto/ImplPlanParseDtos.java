@@ -40,9 +40,7 @@ public final class ImplPlanParseDtos {
                     parserName == null || parserName.isBlank() ? "impl-plan-parser" : parserName,
                     parserVersion == null || parserVersion.isBlank() ? "v1" : parserVersion,
                     traceId,
-                    ciGateStatus,
-                    null,
-                    null
+                    ciGateStatus
             );
         }
     }
@@ -59,7 +57,7 @@ public final class ImplPlanParseDtos {
             String parseStatus,
             String sourcePath,
             String contentHash,
-            Integer schemaVersion,
+            String schemaVersion,
             Boolean schemaValid,
             Boolean templateEmptyFlag,
             List<String> requiredFieldsMissing,

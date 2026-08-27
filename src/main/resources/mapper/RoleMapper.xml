@@ -15,37 +15,27 @@
         <result column="updated_at" property="updatedAt"/>
         <result column="updated_by" property="updatedBy"/>
         <result column="delete_flag" property="deleteFlag"/>
-        <result column="status" property="status"/>
     </resultMap>
 
     <sql id="columns">
-        role_id, role_name, description, created_at, created_by, updated_at, updated_by, delete_flag, status
-    </sql>
-
-    <sql id="roleStatusFilter">
-        <choose>
-            <when test="status != null and status == 'ACTIVE'">
-                AND delete_flag = 0
-                AND status = 'ACTIVE'
-            </when>
-            <when test="status != null and status == 'DELETED'">
-                (delete_flag = 1 OR status = 'DELETED')
-            </when>
-            <otherwise>
-            </otherwise>
-        </choose>
+        role_id, role_name, description, created_at, created_by, updated_at, updated_by, delete_flag
     </sql>
 
     <select id="findActive" resultMap="roleResultMap">
         SELECT <include refid="columns"/>
         FROM tbl_dim_role
-        <where>
-            <include refid="roleStatusFilter"/>
-            <if test="keyword != null and keyword != ''">
-              AND LOWER(role_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-            </if>
-        </where>
-        ORDER BY role_name ASC, role_id ASC
+        WHERE delete_flag = 0
+        <if test="keyword != null and keyword != ''">
+          AND LOWER(role_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+        </if>
+        <choose>
+            <when test="sort == 'roleNameDesc'">
+                ORDER BY role_name DESC, role_id ASC
+            </when>
+            <otherwise>
+                ORDER BY role_name ASC, role_id ASC
+            </otherwise>
+        </choose>
     </select>
 
     <select id="findActiveById" resultMap="roleResultMap">
@@ -53,7 +43,6 @@
         FROM tbl_dim_role
         WHERE role_id = #{roleId}
           AND delete_flag = 0
-          AND status = 'ACTIVE'
     </select>
 
     <select id="findById" resultMap="roleResultMap">
@@ -67,7 +56,6 @@
             SELECT 1
             FROM tbl_dim_role
             WHERE delete_flag = 0
-              AND status = 'ACTIVE'
               AND LOWER(role_name) = LOWER(#{roleName})
               <if test="excludeRoleId != null">
                   AND role_id &lt;&gt; #{excludeRoleId}
@@ -84,8 +72,7 @@
             created_by,
             updated_at,
             updated_by,
-            delete_flag,
-            status
+            delete_flag
         ) VALUES (
             #{roleId},
             #{roleName},
@@ -94,8 +81,7 @@
             #{createdBy},
             #{updatedAt},
             #{updatedBy},
-            0,
-            #{status}::record_status
+            0
         )
     </insert>
 
@@ -107,18 +93,15 @@
             updated_by = #{updatedBy}
         WHERE role_id = #{roleId}
           AND delete_flag = 0
-          AND status = 'ACTIVE'
     </update>
 
     <update id="logicalDelete">
         UPDATE tbl_dim_role
         SET delete_flag = 1,
-            status = 'DELETED'::record_status,
             updated_at = #{updatedAt},
             updated_by = #{updatedBy}
         WHERE role_id = #{roleId}
           AND delete_flag = 0
-          AND status = 'ACTIVE'
     </update>
 
 </mapper>

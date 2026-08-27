@@ -5,7 +5,6 @@ import com.sdd.platform.application.usecase.governance.TeamService;
 import com.sdd.platform.domain.model.AppUser;
 import com.sdd.platform.web.dto.TeamDtos;
 import com.sdd.platform.web.security.CurrentUser;
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,7 +53,7 @@ public class TeamController {
 
     @PostMapping
     public ResponseEntity<TeamDtos.TeamDto> create(
-            @Valid @RequestBody TeamDtos.CreateTeamRequest request,
+            @RequestBody TeamDtos.CreateTeamRequest request,
             @CurrentUser AppUser caller
     ) {
         return ResponseEntity.status(HttpStatus.CREATED).body(
@@ -70,7 +69,7 @@ public class TeamController {
     @PutMapping("/{teamId}")
     public TeamDtos.TeamDto update(
             @PathVariable UUID teamId,
-            @Valid @RequestBody TeamDtos.UpdateTeamRequest request,
+            @RequestBody TeamDtos.UpdateTeamRequest request,
             @CurrentUser AppUser caller
     ) {
         return TeamDtos.TeamDto.from(service.update(

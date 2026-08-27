@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,18 +23,13 @@ public class CustomerService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final String MODULE = "CUSTOMER";
-    private static final String ENTITY_TYPE = "CUSTOMER";
 
     private final CustomerRepositoryPort customerRepository;
     private final OrganizationRepositoryPort organizationRepository;
-    private final AdminAuditLogService adminAuditLogService;
 
-    public CustomerService(CustomerRepositoryPort customerRepository, OrganizationRepositoryPort organizationRepository,
-            AdminAuditLogService adminAuditLogService) {
+    public CustomerService(CustomerRepositoryPort customerRepository, OrganizationRepositoryPort organizationRepository) {
         this.customerRepository = customerRepository;
         this.organizationRepository = organizationRepository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -76,45 +70,37 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public Customer get(UUID customerId, AppUser caller) {
         requireAdmin(caller);
-        Customer customer = customerRepository.findById(customerId)
+        return customerRepository.findById(customerId)
                 .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
-        return customer;
     }
 
     @Transactional
     public Customer create(UUID organizationId, String customerCode, String customerAlias, String classification, AppUser caller) {
         requireAdmin(caller);
-        try {
-            Organization organization = resolveActiveOrganization(organizationId);
-            String normalizedCode = normalizeRequiredCode(customerCode);
-            String normalizedAlias = normalizeRequiredAlias(customerAlias);
-            Customer.CustomerClassification normalizedClassification = normalizeClassification(classification);
-            ensureUniqueCode(normalizedCode, null);
-            ensureUniqueAlias(organization.getOrganizationId(), normalizedAlias, null);
+        Organization organization = resolveActiveOrganization(organizationId);
+        String normalizedCode = normalizeRequiredCode(customerCode);
+        String normalizedAlias = normalizeRequiredAlias(customerAlias);
+        Customer.CustomerClassification normalizedClassification = normalizeClassification(classification);
+        ensureUniqueCode(normalizedCode, null);
+        ensureUniqueAlias(organization.getOrganizationId(), normalizedAlias, null);
 
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            Customer customer = Customer.builder()
-                    .customerId(UUID.randomUUID())
-                    .organizationId(organization.getOrganizationId())
-                    .organizationName(organization.getOrganizationName())
-                    .customerCode(normalizedCode)
-                    .customerAlias(normalizedAlias)
-                    .classification(normalizedClassification)
-                    .status(Customer.CustomerStatus.ACTIVE)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .version(0L)
-                    .build();
-            Customer created = customerRepository.insert(customer);
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getCustomerId().toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        Customer customer = Customer.builder()
+                .customerId(UUID.randomUUID())
+                .organizationId(organization.getOrganizationId())
+                .organizationName(organization.getOrganizationName())
+                .customerCode(normalizedCode)
+                .customerAlias(normalizedAlias)
+                .classification(normalizedClassification)
+                .status(Customer.CustomerStatus.ACTIVE)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .version(0L)
+                .build();
+        return customerRepository.insert(customer);
     }
 
     @Transactional
@@ -128,67 +114,52 @@ public class CustomerService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            Customer existing = customerRepository.findById(customerId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
-            ensureEditable(existing);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
+        Customer existing = customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
+        ensureEditable(existing);
 
-            Organization organization = resolveActiveOrganization(organizationId);
-            String normalizedCode = normalizeRequiredCode(customerCode);
-            String normalizedAlias = normalizeRequiredAlias(customerAlias);
-            Customer.CustomerClassification normalizedClassification = normalizeClassification(classification);
-            ensureUniqueCode(normalizedCode, customerId);
-            ensureUniqueAlias(organization.getOrganizationId(), normalizedAlias, customerId);
+        Organization organization = resolveActiveOrganization(organizationId);
+        String normalizedCode = normalizeRequiredCode(customerCode);
+        String normalizedAlias = normalizeRequiredAlias(customerAlias);
+        Customer.CustomerClassification normalizedClassification = normalizeClassification(classification);
+        ensureUniqueCode(normalizedCode, customerId);
+        ensureUniqueAlias(organization.getOrganizationId(), normalizedAlias, customerId);
 
-            String actor = resolveActor(caller);
-            existing.setOrganizationId(organization.getOrganizationId());
-            existing.setOrganizationName(organization.getOrganizationName());
-            existing.setCustomerCode(normalizedCode);
-            existing.setCustomerAlias(normalizedAlias);
-            existing.setClassification(normalizedClassification);
-            existing.setVersion(version);
-            existing.setUpdatedBy(actor);
-            existing.setUpdatedAt(OffsetDateTime.now());
+        String actor = resolveActor(caller);
+        existing.setOrganizationId(organization.getOrganizationId());
+        existing.setOrganizationName(organization.getOrganizationName());
+        existing.setCustomerCode(normalizedCode);
+        existing.setCustomerAlias(normalizedAlias);
+        existing.setClassification(normalizedClassification);
+        existing.setVersion(version);
+        existing.setUpdatedBy(actor);
+        existing.setUpdatedAt(OffsetDateTime.now());
 
-            int affected = customerRepository.update(existing);
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Customer.Conflict.Version");
-            }
-            Customer updated = customerRepository.findById(customerId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, customerId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, customerId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        int affected = customerRepository.update(existing);
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Customer.Conflict.Version");
         }
+        return customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
     }
 
     @Transactional
     public Customer softDelete(UUID customerId, long version, AppUser caller) {
         requireAdmin(caller);
-        try {
-            Customer existing = customerRepository.findById(customerId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
-            if (existing.isDeleted()) {
-                throw new BusinessRuleException("Pages.Customer.AlreadyDeleted");
-            }
-
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            int affected = customerRepository.softDelete(customerId, version, actor, now, actor, now);
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Customer.Conflict.Version");
-            }
-            Customer deleted = customerRepository.findById(customerId)
-                    .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, customerId.toString(), existing);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, customerId.toString(), "DELETE", ex.getMessage());
-            throw ex;
+        Customer existing = customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
+        if (existing.isDeleted()) {
+            throw new BusinessRuleException("Pages.Customer.AlreadyDeleted");
         }
+
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        int affected = customerRepository.softDelete(customerId, version, actor, now, actor, now);
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Customer.Conflict.Version");
+        }
+        return customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Pages.Customer.NotFound"));
     }
 
     private void requireAdmin(AppUser caller) {

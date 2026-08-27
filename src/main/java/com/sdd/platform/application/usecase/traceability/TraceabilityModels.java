@@ -36,8 +36,7 @@ public final class TraceabilityModels {
             boolean requiredFlag,
             String sourcePath,
             boolean existsFlag,
-            OffsetDateTime collectedAt,
-            Integer schemaVersion
+            OffsetDateTime collectedAt
     ) {
     }
 
@@ -61,7 +60,6 @@ public final class TraceabilityModels {
             String commitHash,
             String branchName,
             String messageHash,
-            String commitUrl,
             OffsetDateTime committedAt,
             OffsetDateTime collectedAt
     ) {
@@ -128,8 +126,7 @@ public final class TraceabilityModels {
             boolean requiredFlag,
             String sourcePath,
             boolean existsFlag,
-            OffsetDateTime collectedAt,
-            Integer schemaVersion
+            OffsetDateTime collectedAt
     ) {
     }
 
@@ -153,7 +150,6 @@ public final class TraceabilityModels {
             String commitHash,
             String branchName,
             String messageHash,
-            String commitUrl,
             OffsetDateTime committedAt,
             OffsetDateTime collectedAt
     ) {
@@ -216,8 +212,7 @@ public final class TraceabilityModels {
             int prCount,
             int commitCount,
             int ciCount,
-            int brokenLinkCount,
-            int reviewRoundCount
+            int brokenLinkCount
     ) {
     }
 
@@ -229,19 +224,7 @@ public final class TraceabilityModels {
             List<CiRunCoverage> ciRuns,
             List<TraceabilityLink> links,
             List<BrokenLink> brokenLinks,
-            List<TimelineEvent> timelineEvents,
-            List<TraceabilityReviewCommentRow> reviewComments
-    ) {
-    }
-
-    public record TraceabilityReviewCommentRow(
-            UUID reviewCommentId,
-            String filePathHash,
-            Integer lineNumber,
-            String commentSummary,
-            String state,
-            String submittedAt,
-            String submittedBy
+            List<TimelineEvent> timelineEvents
     ) {
     }
 }

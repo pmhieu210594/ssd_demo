@@ -13,13 +13,6 @@ run them, what is missing, and what is fragile.
 
 The original phase-0 test inventory below was not confirmed to pass in this session; later snapshots record implemented Organization and Team coverage that was verified in project workspaces.
 
-> **Stale reference (confirmed 2026-08-21, ticket SDD-LEAD-TIME):** every mention of
-> `LayerEnforcementTest.java` below (architecture-rule test, ArchUnit) describes an
-> **intended/planned** test file. A repo-wide glob of `src/test/java` found the file does not
-> exist — only the `archunit-junit5` dependency is declared in `pom.xml` (unused). Hexagonal
-> layer boundaries are currently verified by manual code review only, not by an automated test.
-> See `docs/maintenance/failure-mode-index.md` `FMI-PM-003` context for how this was discovered.
-
 ---
 
 ## 2. Test Framework / Tooling
@@ -50,7 +43,7 @@ The original phase-0 test inventory below was not confirmed to pass in this sess
 | Test Type | Path | Target Area | Note |
 |-----------|------|-------------|------|
 | Unit — Application | `EDCAP_BE/src/test/java/com/sdd/platform/application/usecase/ingestion/GithubWebhookServiceTest.java` | `GithubWebhookService` (application layer) | 8 tests; mocks `RepositoryRepositoryPort`, `PullRequestIngestionPort` |
-| Unit — Architecture | `EDCAP_BE/src/test/java/com/sdd/platform/architecture/LayerEnforcementTest.java` | All production classes in `com.sdd.platform` | **File not implemented** (confirmed absent via repo-wide glob, 2026-08-21) — 7 ArchUnit rules described here are planned/intended only, not enforced automatically |
+| Unit — Architecture | `EDCAP_BE/src/test/java/com/sdd/platform/architecture/LayerEnforcementTest.java` | All production classes in `com.sdd.platform` | 7 ArchUnit rules; scans bytecode at test runtime |
 | Unit — Domain | `EDCAP_BE/src/test/java/com/sdd/platform/domain/service/ArtifactNormalizerTest.java` | `ArtifactNormalizer` (domain layer) | 6 tests; no mocks — pure function |
 | Unit — FE | `EDCAP_FE/src/__tests__/` | (placeholder only) | `README.md` present; **no .test.ts or .spec.ts files** |
 | Integration | — | — | **Not present** in either BE or FE |

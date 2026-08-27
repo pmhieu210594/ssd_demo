@@ -32,10 +32,8 @@
 ## 7. Security / operations perspective
 
 ## 8. Accepted Risk
-| risk | impact | owner | deadline | status| approver |
-|---|---|---|---|---|---|
-| {risk} | {impact} | {owner} | {deadline} | OPEN | {approver} |
-| {risk} | {impact} | {owner} | {deadline} | CLOSED | {approver} |
+| risk | impact | owner | deadline | approver |
+|---|---|---|---|---|
 
 ## 9. Open Issues
 | issue | impact | next action |

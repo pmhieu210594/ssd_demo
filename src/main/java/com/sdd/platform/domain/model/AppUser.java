@@ -18,5 +18,5 @@ public class AppUser {
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
-    public enum Role { VIEWER, EDITOR, ADMIN, PM }
+    public enum Role { VIEWER, EDITOR, ADMIN }
 }

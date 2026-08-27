@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -90,45 +89,12 @@ public class PmDashboardController {
         return PmDashboardDtos.PmDashboardRefreshDto.from(service.refresh(caller));
     }
 
-    @GetMapping("/access")
-    public ResponseEntity<Void> access(
-            @RequestParam(required = false) UUID projectId,
-            @CurrentUser AuthUserContext caller
-    ) {
-        if (projectId != null) {
-            service.requirePm(caller, projectId);
-        } else {
-            service.requireAnyAccess(caller);
-        }
-        return ResponseEntity.noContent().build();
-    }
-
     @GetMapping("/options")
     public PmDashboardDtos.PmDashboardOptionsDto options(
             @RequestParam(required = false) UUID projectId,
             @CurrentUser AuthUserContext caller
     ) {
         return PmDashboardDtos.PmDashboardOptionsDto.from(service.options(projectId, caller));
-    }
-
-    @GetMapping("/template-usage")
-    public List<PmDashboardDtos.TemplateUsageDto> templateUsage(
-            @RequestParam UUID projectId,
-            @RequestParam UUID repositoryId,
-            @CurrentUser AuthUserContext caller
-    ) {
-        return service.getTemplateUsage(caller, projectId, repositoryId).stream()
-                .map(PmDashboardDtos.TemplateUsageDto::from)
-                .toList();
-    }
-
-    @GetMapping("/ai-finding-stats")
-    public PmDashboardDtos.AiFindingStatsDto aiFindingStats(
-            @RequestParam UUID projectId,
-            @RequestParam UUID repositoryId,
-            @CurrentUser AuthUserContext caller
-    ) {
-        return PmDashboardDtos.AiFindingStatsDto.from(service.getAiFindingStats(caller, projectId, repositoryId));
     }
 
     @PostMapping(value = "/export", produces = "text/csv")

@@ -20,7 +20,7 @@ public interface GitPrMetadataCollectorPersistencePort {
 
     Optional<TicketScope> findTicketByProjectIdAndExternalKey(UUID projectId, String externalTicketKey);
 
-    TicketScope upsertMinimalTicket(UUID projectId, String externalTicketKey, String title, String status, java.time.OffsetDateTime lastCommitAt, String createdBy);
+    TicketScope upsertMinimalTicket(UUID projectId, String externalTicketKey, String title, String status, java.time.OffsetDateTime lastCommitAt);
 
     ConnectorScope ensureConnector(String connectorType, String connectorName);
 
@@ -31,8 +31,6 @@ public interface GitPrMetadataCollectorPersistencePort {
     Optional<UUID> findMemberKeyByPseudonym(String pseudonym);
 
     Optional<UUID> findMemberKeyByExternalUserHash(String externalUserHash);
-
-    Optional<String> findFullnameByMemberKey(UUID memberKey);
 
     UUID upsertPullRequest(PullRequestUpsert request);
 

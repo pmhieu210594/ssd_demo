@@ -58,7 +58,7 @@ class PmDashboardControllerTest {
         when(service.summary(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(pm)))
                 .thenReturn(new PmDashboardModels.DashboardSummary(
                         1, 2, 3, 4, 5, 6, 7, 8,
-                        new BigDecimal("82.5"), "PLAN", "Plan", 2L,
+                        new BigDecimal("82.5"), "GOOD", "PLAN", "Plan", 2L,
                         OffsetDateTime.parse("2026-06-25T00:00:00Z")
                 ));
 
@@ -66,6 +66,7 @@ class PmDashboardControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.blockedTicketCount").value(1))
                 .andExpect(jsonPath("$.missingTraceabilitySectionTicketCount").value(3))
+                .andExpect(jsonPath("$.averageScoreBand").value("GOOD"))
                 .andExpect(jsonPath("$.phaseBottleneckPhaseCode").value("PLAN"));
 
         verify(service).summary(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(pm));
@@ -142,9 +143,9 @@ class PmDashboardControllerTest {
         PmDashboardModels.DashboardTicketRow row = new PmDashboardModels.DashboardTicketRow(
                 ticketId, UUID.randomUUID(), "PROJ", UUID.randomUUID(), "repo-x",
                 "PROJ-1", "Implement auth module",
-                UUID.randomUUID(), "PLAN", "Plan", "Plan phase description", OffsetDateTime.parse("2026-06-20T00:00:00Z"), 2,
+                UUID.randomUUID(), "PLAN", "Plan", 2,
                 true, false, 2, 1, 0, 1, 0, 0, "HIGH",
-                new BigDecimal("68.0"), "v1",
+                new BigDecimal("68.0"), "WARNING", "v1",
                 4, "Backend Role", "2026-06",
                 OffsetDateTime.parse("2026-06-25T00:00:00Z"),
                 OffsetDateTime.parse("2026-06-25T01:00:00Z")
@@ -155,18 +156,14 @@ class PmDashboardControllerTest {
                 new BigDecimal("8"), new BigDecimal("9")
         );
         PmDashboardModels.DashboardTicketDetail detail = new PmDashboardModels.DashboardTicketDetail(
-                row, row.createdAt(), row.ownerDisplay(), 2, List.of(), List.of(), List.of(), List.of(), breakdown, "/traceability/PROJ-1", List.of()
+                row, List.of(), List.of(), List.of(), breakdown, "/traceability/PROJ-1"
         );
         when(service.detail(eq(ticketId), eq(pm))).thenReturn(detail);
 
         mockMvc.perform(get("/api/v1/pm/dashboard/tickets/{ticketId}/detail", ticketId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.createdAt").exists())
-                .andExpect(jsonPath("$.ownerDisplay").value("Backend Role"))
-                .andExpect(jsonPath("$.row.phaseName").value("Plan"))
-                .andExpect(jsonPath("$.row.phaseDescription").value("Plan phase description"))
-                .andExpect(jsonPath("$.row.phaseCreatedAt").exists())
                 .andExpect(jsonPath("$.row.evidenceQualityScore").value(68.0))
+                .andExpect(jsonPath("$.row.scoreBand").value("WARNING"))
                 .andExpect(jsonPath("$.row.missingEvidenceCount").value(2))
                 .andExpect(jsonPath("$.row.riskCount").value(1))
                 .andExpect(jsonPath("$.scoreBreakdown.specScore").value(12))
@@ -183,78 +180,6 @@ class PmDashboardControllerTest {
                 .andExpect(status().isOk());
 
         verify(service).tickets(isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq("abc"), eq(1), eq(20), eq(pm));
-    }
-
-    @Test
-    void templateUsage_returnsDtoListWithComputedUsageRate() throws Exception {
-        UUID projectId = UUID.fromString("90000000-0000-0000-0000-000000000004");
-        UUID repositoryId = UUID.fromString("90000000-0000-0000-0000-000000000005");
-        when(service.getTemplateUsage(eq(pm), eq(projectId), eq(repositoryId))).thenReturn(List.of(
-                new PmDashboardModels.TemplateUsageRow("PLAN", "Plan", 2, 1),
-                new PmDashboardModels.TemplateUsageRow("SPEC", "Spec", 0, 0)));
-
-        mockMvc.perform(get("/api/v1/pm/dashboard/template-usage")
-                        .param("projectId", projectId.toString())
-                        .param("repositoryId", repositoryId.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].phaseCode").value("PLAN"))
-                .andExpect(jsonPath("$[0].totalCheckCount").value(2))
-                .andExpect(jsonPath("$[0].templateMatchCount").value(1))
-                .andExpect(jsonPath("$[0].usageRate").value(50.0))
-                .andExpect(jsonPath("$[1].phaseCode").value("SPEC"))
-                .andExpect(jsonPath("$[1].usageRate").doesNotExist());
-
-        verify(service).getTemplateUsage(eq(pm), eq(projectId), eq(repositoryId));
-    }
-
-    @Test
-    void templateUsage_mapsForbidden() throws Exception {
-        UUID projectId = UUID.fromString("90000000-0000-0000-0000-000000000004");
-        UUID repositoryId = UUID.fromString("90000000-0000-0000-0000-000000000005");
-        when(service.getTemplateUsage(eq(pm), eq(projectId), eq(repositoryId)))
-                .thenThrow(new ForbiddenException("Component.Permission.Denied"));
-
-        mockMvc.perform(get("/api/v1/pm/dashboard/template-usage")
-                        .param("projectId", projectId.toString())
-                        .param("repositoryId", repositoryId.toString()))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("Component.Permission.Denied"));
-    }
-
-    @Test
-    void aiFindingStats_returnsComputedRates() throws Exception {
-        UUID projectId = UUID.fromString("90000000-0000-0000-0000-000000000004");
-        UUID repositoryId = UUID.fromString("90000000-0000-0000-0000-000000000005");
-        when(service.getAiFindingStats(eq(pm), eq(projectId), eq(repositoryId))).thenReturn(
-                new PmDashboardModels.AiFindingStatsRow(repositoryId, "widget", 1, 1, 2, 2, 2, 0, 2));
-
-        mockMvc.perform(get("/api/v1/pm/dashboard/ai-finding-stats")
-                        .param("projectId", projectId.toString())
-                        .param("repositoryId", repositoryId.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.repositoryId").value(repositoryId.toString()))
-                .andExpect(jsonPath("$.repositoryName").value("widget"))
-                .andExpect(jsonPath("$.blockerMajorResolutionRate").value(100.0))
-                .andExpect(jsonPath("$.aiReviewAdoptionRate").value(100.0))
-                .andExpect(jsonPath("$.aiReviewValidFindingRate").value(100.0))
-                .andExpect(jsonPath("$.aiFalsePositiveRate").value(0.0))
-                .andExpect(jsonPath("$.aiFindingResolutionRate").value(100.0));
-
-        verify(service).getAiFindingStats(eq(pm), eq(projectId), eq(repositoryId));
-    }
-
-    @Test
-    void aiFindingStats_mapsForbidden() throws Exception {
-        UUID projectId = UUID.fromString("90000000-0000-0000-0000-000000000004");
-        UUID repositoryId = UUID.fromString("90000000-0000-0000-0000-000000000005");
-        when(service.getAiFindingStats(eq(pm), eq(projectId), eq(repositoryId)))
-                .thenThrow(new ForbiddenException("Component.Permission.Denied"));
-
-        mockMvc.perform(get("/api/v1/pm/dashboard/ai-finding-stats")
-                        .param("projectId", projectId.toString())
-                        .param("repositoryId", repositoryId.toString()))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("Component.Permission.Denied"));
     }
 
     @Test

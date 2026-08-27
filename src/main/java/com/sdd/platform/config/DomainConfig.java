@@ -1,7 +1,6 @@
 package com.sdd.platform.config;
 
 import com.sdd.platform.domain.service.ArtifactNormalizer;
-import com.sdd.platform.domain.service.markdown.report.ReportMarkdownParser;
 import com.sdd.platform.domain.service.markdown.reviewchecklist.ReviewChecklistMarkdownParser;
 import com.sdd.platform.domain.service.markdown.selfreview.SelfReviewMarkdownParser;
 import com.sdd.platform.domain.service.markdown.specpack.SpecPackMarkdownParser;
@@ -36,10 +35,5 @@ public class DomainConfig {
     @Bean
     public ReviewChecklistMarkdownParser reviewChecklistMarkdownParser() {
         return new ReviewChecklistMarkdownParser();
-    }
-
-    @Bean
-    public ReportMarkdownParser reportMarkdownParser() {
-        return new ReportMarkdownParser();
     }
 }

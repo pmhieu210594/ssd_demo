@@ -87,10 +87,7 @@ public class GithubPullRequestMetadataAdapter implements GithubPullRequestMetada
                     externalReviewId,
                     item.path("user").path("login").asText(""),
                     item.path("state").asText("").trim().toUpperCase(Locale.ROOT),
-                    item.path("body").asText(""),
-                    item.path("path").asText(""),
-                    parseDate(item.path("submitted_at").asText(null)),
-                    item.path("user").path("login").asText("")
+                    parseDate(item.path("submitted_at").asText(null))
             ));
         }
 

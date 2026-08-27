@@ -2,7 +2,6 @@ package com.sdd.platform.application.usecase.governance;
 
 import com.sdd.platform.application.exception.AccountTemporarilyUnavailableException;
 import com.sdd.platform.application.exception.AuthenticationFailedException;
-import com.sdd.platform.application.exception.ForbiddenException;
 import com.sdd.platform.application.port.out.persistence.AuthTokenSessionRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.AuthUserAccountRepositoryPort;
 import com.sdd.platform.config.AppProperties;
@@ -22,52 +21,40 @@ public class AuthService {
 
     private static final String INVALID_MESSAGE_KEY = "auth.invalid_credentials";
     private static final String UNAVAILABLE_MESSAGE_KEY = "auth.account_temporarily_unavailable";
-    private static final String NO_ROLE_ASSIGNED_MESSAGE_KEY = "auth.no_role_assigned";
 
     private final AuthUserAccountRepositoryPort accountRepository;
     private final AuthTokenSessionRepositoryPort tokenSessionRepository;
     private final AuthTokenService tokenService;
     private final AppProperties appProperties;
-    private final AdminAuditLogService adminAuditLogService;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public AuthService(
             AuthUserAccountRepositoryPort accountRepository,
             AuthTokenSessionRepositoryPort tokenSessionRepository,
             AuthTokenService tokenService,
-            AppProperties appProperties,
-            AdminAuditLogService adminAuditLogService
+            AppProperties appProperties
     ) {
         this.accountRepository = accountRepository;
         this.tokenSessionRepository = tokenSessionRepository;
         this.tokenService = tokenService;
         this.appProperties = appProperties;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     public AuthLoginResult login(String rawUsername, String rawPassword) {
         String username = rawUsername == null ? "" : rawUsername.trim();
         if (username.isBlank() || rawPassword == null || rawPassword.isBlank()) {
-            adminAuditLogService.logLoginFailure(username, "Missing username or password");
             throw new AuthenticationFailedException(INVALID_MESSAGE_KEY);
         }
 
         AuthUserAccount account = accountRepository.findByUsername(username).orElse(null);
         if (account == null || !matches(account.getPasswordAlgo(), account.getPasswordHash(), rawPassword)) {
             if (account != null && !account.isActive()) {
-                adminAuditLogService.logLoginFailure(username, "Account inactive");
                 throw new AccountTemporarilyUnavailableException(UNAVAILABLE_MESSAGE_KEY);
             }
-            adminAuditLogService.logLoginFailure(username, "Invalid credentials");
             throw new AuthenticationFailedException(INVALID_MESSAGE_KEY);
         }
         if (!account.isActive()) {
-            adminAuditLogService.logLoginFailure(username, "Account inactive");
             throw new AccountTemporarilyUnavailableException(UNAVAILABLE_MESSAGE_KEY);
-        }
-        if (account.isRoleDeleted() || account.getRoleName() == null || account.getRoleName().isBlank()) {
-            adminAuditLogService.logLoginFailure(username, "No role assigned");
-            throw new ForbiddenException(NO_ROLE_ASSIGNED_MESSAGE_KEY);
         }
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -92,7 +79,6 @@ public class AuthService {
                 "ADMIN".equalsIgnoreCase(roleName) ? "/admin"
                         : "PM".equalsIgnoreCase(roleName) ? "/pm-dashboard"
                         : "/";
-        adminAuditLogService.logLoginSuccess(context);
         return new AuthLoginResult(token, refreshToken, "Bearer", ttlSeconds, context, redirectTo);
     }
 
@@ -106,7 +92,6 @@ public class AuthService {
     public void logout(AuthUserContext context) {
         if (context != null) {
             tokenSessionRepository.revokeByUsername(context.getUsername().trim(), OffsetDateTime.now());
-            adminAuditLogService.logLogout(context);
         }
     }
 
@@ -130,7 +115,7 @@ public class AuthService {
                 .username(account.getUsername())
                 .displayName(account.getFullname())
                 .email(account.getEmail())
-                .role(account.getRoleName())
+                .role(account.getRoleName() == null ? "VIEWER" : account.getRoleName())
                 .accessScopes(account.getAccessScopes() == null ? List.of() : account.getAccessScopes())
                 .build();
     }

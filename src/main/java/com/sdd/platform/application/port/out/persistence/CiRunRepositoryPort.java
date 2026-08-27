@@ -3,7 +3,7 @@ package com.sdd.platform.application.port.out.persistence;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.ConnectorScope;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.CiRunMetadataView;
 import com.sdd.platform.application.usecase.ingestion.CiRunModels.PullRequestScope;
-import com.sdd.platform.domain.model.CiJob;
+import com.sdd.platform.application.usecase.ingestion.CiRunModels.RepositoryScope;
 import com.sdd.platform.domain.model.CiRun;
 import com.sdd.platform.domain.model.ConnectorRun;
 
@@ -25,17 +25,9 @@ public interface CiRunRepositoryPort {
 
     Optional<String> findTicketKeyByPullRequestId(UUID pullRequestId);
 
-    Optional<UUID> findCiRunIdByIdentity(String ciProvider, UUID repositoryId, String externalRunId);
-
-    CiJob upsertCiJob(CiJob job);
-
-    String computeAggregateRunStatus(UUID ciRunId);
-
-    void updateCiRunStatus(UUID ciRunId, String status);
+    Optional<UUID> findCiRunIdByIdentity(String ciProvider, UUID repositoryId, String externalRunId, String externalJobId);
 
     Optional<CiRunMetadataView> findLatestCiRunByRepositoryAndTicket(UUID repositoryId, UUID ticketId);
-
-    Optional<CiRunMetadataView> findFirstCiRunByTicketId(UUID ticketId);
 
     Optional<PullRequestScope> findLatestPullRequestByTicket(UUID ticketId);
 

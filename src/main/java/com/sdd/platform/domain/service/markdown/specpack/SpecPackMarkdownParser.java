@@ -27,44 +27,53 @@ import java.util.stream.Collectors;
  */
 public class SpecPackMarkdownParser {
 
-    private static final Pattern AC_PATTERN = Pattern.compile(
-            "(?i)^AC-(?<group>\\p{L}[\\p{L}0-9]*(?:-\\p{L}[\\p{L}0-9]*)*)-(?<index>\\d+)(?:/v(?<version>\\d+))?$");
-    private static final Pattern SOURCE_PATH_PATTERN = Pattern
-            .compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/spec-pack\\.md$");
+    private static final Pattern AC_PATTERN = Pattern.compile("^AC-(?<ticket>[A-Z0-9][A-Z0-9-]*)-(?<index>\\d+)$");
+    private static final Pattern SOURCE_PATH_PATTERN = Pattern.compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/spec-pack\\.md$");
     private static final String DEFAULT_PARSE_MODE = "draft";
     private static final String PARSER_VERSION = "markdown-core-v1";
 
     private static final List<String> REQUIRED_SECTION_KEYS = List.of(
-            "BỐI_CẢNH_MỤC_ĐÍCH",
-            "PHẠM_VI",
-            "TRONG_PHẠM_VI",
-            "NGOÀI_PHẠM_VI",
-            "THUẬT_NGỮ",
-            "HIỆN_TRẠNG_TRẠNG_THÁI_MỤC_TIÊU",
-            "CHI_TIẾT_ĐẶC_TẢ",
-            "YÊU_CẦU_PHI_CHỨC_NĂNG",
-            "TIÊU_CHÍ_CHẤP_NHẬN",
-            "CÁC_VẤN_ĐỀ_MỞ",
-            "RỦI_RO",
-            "BẢNG_TRUY_VẾT",
-            "PHÁN_ĐỊNH_IMPLEMENTATION_READINESS",
-            "THỨ_TỰ_ƯU_TIÊN_OPEN_ISSUES_CẦN_CON_NGƯỜI_QUYẾT_ĐỊNH");
-
-    public static List<String> requiredSectionKeys() {
-        return List.copyOf(REQUIRED_SECTION_KEYS);
-    }
-
-    public static boolean isParentSection(String sectionKey) {
-        return PARENT_CHILD_HIERARCHY.containsKey(sectionKey);
-    }
+            "CONTEXT_PURPOSE",
+            "SCOPE",
+            "SCOPE_WITHIN_RANGE",
+            "SCOPE_OUT_OF_RANGE",
+            "TERMINOLOGY",
+            "AS_IS",
+            "TO_BE",
+            "DETAILED_SPECIFICATION",
+            "BUSINESS_RULES",
+            "INPUT",
+            "OUTPUT",
+            "ERROR_EXCEPTION",
+            "BOUNDARY_VALUE",
+            "NON_FUNCTIONAL",
+            "ACCEPTANCE_CRITERIA",
+            "EXAMPLES",
+            "EXAMPLE_NORMAL_CASE",
+            "EXAMPLE_ERROR_CASE",
+            "EXAMPLE_BOUNDARY_CASE",
+            "SOURCE_AVAILABILITY_SUMMARY",
+            "COMPLEXITY_CLASSIFICATION",
+            "FE_BE_CONTRACT_IMPACT",
+            "DB_MIGRATION_IMPACT",
+            "SECURITY_PRIVACY_IMPACT",
+            "OPERATION_MAINTENANCE_IMPACT",
+            "TEST_STRATEGY_SUMMARY",
+            "HUMAN_DECISION_REQUIRED",
+            "ASSUMPTIONS_INFERENCE_LOG",
+            "OPEN_ISSUES"
+    );
 
     // Parent section → list of required child sections.
-    // If a parent has children, the existence of the parent section itself is
-    // sufficient; child content is not required for presence detection.
+    // If a parent has children, parent content is NOT checked; only children are checked.
     // SCOPE is treated as present as soon as the heading exists.
     private static final Map<String, List<String>> PARENT_CHILD_HIERARCHY = Map.ofEntries(
-            Map.entry("PHẠM_VI", List.of("TRONG_PHẠM_VI", "NGOÀI_PHẠM_VI"))
-        );
+            Map.entry("SCOPE", List.of("SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE")),
+            Map.entry("DETAILED_SPECIFICATION", List.of("BUSINESS_RULES", "INPUT", "OUTPUT", "ERROR_EXCEPTION", "BOUNDARY_VALUE", "NON_FUNCTIONAL")),
+            Map.entry("EXAMPLES", List.of("EXAMPLE_NORMAL_CASE", "EXAMPLE_ERROR_CASE", "EXAMPLE_BOUNDARY_CASE"))
+    );
+
+    private static final Set<String> HEADING_ONLY_SECTION_KEYS = Set.of("SCOPE");
 
     private final MarkdownParserCore core;
 
@@ -101,7 +110,8 @@ public class SpecPackMarkdownParser {
         String rawFrontMatterTicketId = firstNonBlank(
                 frontMatter.get("ticket_id"),
                 frontMatter.get("ticket-id"),
-                frontMatter.get("ticketid"));
+                frontMatter.get("ticketid")
+        );
         if (rawFrontMatterTicketId != null && !isTicketId(rawFrontMatterTicketId)) {
             warnings.add(new ParsingIssue(
                     "front_matter_ticket_id_invalid",
@@ -109,7 +119,8 @@ public class SpecPackMarkdownParser {
                     "Front matter ticket_id is present but invalid: " + rawFrontMatterTicketId,
                     sourcePath,
                     null,
-                    -1));
+                    -1
+            ));
         }
 
         String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath, sections);
@@ -120,17 +131,18 @@ public class SpecPackMarkdownParser {
                     "Unable to infer ticket_id from front matter, header metadata, or source path",
                     sourcePath,
                     null,
-                    -1));
+                    -1
+            ));
         }
 
         List<AcceptanceCriterion> acceptanceCriteria = extractAcceptanceCriteria(
-                sectionList,
+                ticketId,
                 tables,
                 warnings,
-                sourcePath);
+                sourcePath
+        );
 
-        List<String> requiredFieldsMissing = detectRequiredFieldsMissing(frontMatter, sections, sectionList,
-                acceptanceCriteria, ticketId);
+        List<String> requiredFieldsMissing = detectRequiredFieldsMissing(frontMatter, sections, sectionList, acceptanceCriteria, ticketId);
         if (!requiredFieldsMissing.isEmpty()) {
             warnings.add(new ParsingIssue(
                     "required_fields_missing",
@@ -138,7 +150,8 @@ public class SpecPackMarkdownParser {
                     "Missing required fields: " + String.join(", ", requiredFieldsMissing),
                     sourcePath,
                     null,
-                    -1));
+                    -1
+            ));
         }
 
         if (!placeholders.isEmpty()) {
@@ -148,7 +161,8 @@ public class SpecPackMarkdownParser {
                     "Placeholder values were detected in required fields",
                     sourcePath,
                     null,
-                    -1));
+                    -1
+            ));
         }
 
         boolean artifactExists = !document.normalizedContent().isBlank();
@@ -168,7 +182,8 @@ public class SpecPackMarkdownParser {
                 warnings,
                 errors,
                 requiredFieldsMissing,
-                placeholders);
+                placeholders
+        );
 
         return new ParsedArtifact(
                 sourcePath,
@@ -189,7 +204,8 @@ public class SpecPackMarkdownParser {
                 document.normalizedContent(),
                 document.contentHash(),
                 PARSER_VERSION,
-                parsedSummary);
+                parsedSummary
+        );
     }
 
     public boolean hasSection(ParsedArtifact parsed, String... aliases) {
@@ -199,8 +215,7 @@ public class SpecPackMarkdownParser {
 
         for (String alias : aliases) {
             String normalizedAlias = normalizeSectionAlias(alias);
-            if (parsed.sections().keySet().stream()
-                    .anyMatch(key -> key.equalsIgnoreCase(normalizedAlias) || key.contains(normalizedAlias))) {
+            if (parsed.sections().keySet().stream().anyMatch(key -> key.equalsIgnoreCase(normalizedAlias) || key.contains(normalizedAlias))) {
                 return true;
             }
         }
@@ -215,22 +230,18 @@ public class SpecPackMarkdownParser {
                         issue.message(),
                         issue.path(),
                         issue.sectionKey(),
-                        issue.line()))
+                        issue.line()
+                ))
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
-    private List<AcceptanceCriterion> extractAcceptanceCriteria(List<MarkdownSection> sectionList,
-            List<MarkdownTable> tables,
-            List<ParsingIssue> warnings,
-            String sourcePath) {
+    private List<AcceptanceCriterion> extractAcceptanceCriteria(String ticketId,
+                                                                List<MarkdownTable> tables,
+                                                                List<ParsingIssue> warnings,
+                                                                String sourcePath) {
         List<AcceptanceCriterion> acceptanceCriteria = new ArrayList<>();
-
-        Set<String> acGroupSectionKeys = findDynamicChildren(sectionList, "TIÊU_CHÍ_CHẤP_NHẬN").stream()
-                .map(MarkdownSection::canonicalKey)
-                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-
         for (MarkdownTable table : tables) {
-            if (!acGroupSectionKeys.contains(table.sectionKey())) {
+            if (!"ACCEPTANCE_CRITERIA".equals(table.sectionKey())) {
                 continue;
             }
             if (table.rows().isEmpty()) {
@@ -240,57 +251,61 @@ public class SpecPackMarkdownParser {
                         "Acceptance Criteria table has no data rows",
                         sourcePath,
                         table.sectionKey(),
-                        table.startLine()));
+                        table.startLine()
+                ));
                 continue;
             }
 
             int idIndex = findColumnIndex(table.headers(), "acid", "ac id", "id");
-            int descriptionIndex = findColumnIndex(table.headers(), "mô tả", "mo ta", "description", "details");
-            int unitTestIndex = findColumnIndex(table.headers(), "ut");
-            int integrationTestIndex = findColumnIndex(table.headers(), "it");
-            int e2eTestIndex = findColumnIndex(table.headers(), "e2e");
-            int blackBoxTestIndex = findColumnIndex(table.headers(), "bb");
+            int descriptionIndex = findColumnIndex(table.headers(), "description", "details");
+            int testableIndex = findColumnIndex(table.headers(), "testable", "testable?");
+            int notesIndex = findColumnIndex(table.headers(), "notes", "remark", "remarks");
 
             for (int rowIndex = 0; rowIndex < table.rows().size(); rowIndex++) {
                 List<String> row = table.rows().get(rowIndex);
                 String rawId = cell(row, idIndex >= 0 ? idIndex : 0);
                 String description = cell(row, descriptionIndex >= 0 ? descriptionIndex : 1);
-                boolean unitTest = !cell(row, unitTestIndex).isBlank();
-                boolean integrationTest = !cell(row, integrationTestIndex).isBlank();
-                boolean e2eTest = !cell(row, e2eTestIndex).isBlank();
-                boolean blackBoxTest = !cell(row, blackBoxTestIndex).isBlank();
+                String testable = cell(row, testableIndex >= 0 ? testableIndex : 2);
+                String notes = cell(row, notesIndex >= 0 ? notesIndex : 3);
 
-                boolean validFormat = isValidAcId(rawId);
+                boolean validFormat = isValidAcId(rawId, ticketId);
                 Integer sequenceNumber = extractSequenceNumber(rawId);
                 if (!validFormat) {
                     warnings.add(new ParsingIssue(
                             "ac_format_invalid",
                             "warning",
-                            "AC ID does not match the expected AC-<GROUP>-<n>[/v<version>] format: " + rawId,
+                            "AC ID does not match the expected AC-<TICKET>-<n> format: " + rawId,
                             sourcePath,
                             table.sectionKey(),
-                            table.startLine() + rowIndex + 1));
+                            table.startLine() + rowIndex + 1
+                    ));
                 }
 
                 acceptanceCriteria.add(new AcceptanceCriterion(
                         rawId,
                         description,
-                        unitTest,
-                        integrationTest,
-                        e2eTest,
-                        blackBoxTest,
+                        testable,
+                        notes,
                         validFormat,
-                        sequenceNumber));
+                        sequenceNumber
+                ));
             }
         }
         return acceptanceCriteria;
     }
 
-    private boolean isValidAcId(String rawId) {
+    private boolean isValidAcId(String rawId, String ticketId) {
         if (rawId == null || rawId.isBlank()) {
             return false;
         }
-        return AC_PATTERN.matcher(rawId.trim()).matches();
+        Matcher matcher = AC_PATTERN.matcher(rawId.trim());
+        if (!matcher.matches()) {
+            return false;
+        }
+        if (ticketId == null || ticketId.isBlank()) {
+            return true;
+        }
+        return ticketId.equalsIgnoreCase(matcher.group("ticket"));
     }
 
     private Integer extractSequenceNumber(String rawId) {
@@ -309,10 +324,10 @@ public class SpecPackMarkdownParser {
     }
 
     private List<String> detectRequiredFieldsMissing(Map<String, String> frontMatter,
-            Map<String, String> sections,
-            List<MarkdownSection> sectionList,
-            List<AcceptanceCriterion> acceptanceCriteria,
-            String ticketId) {
+                                                     Map<String, String> sections,
+                                                     List<MarkdownSection> sectionList,
+                                                     List<AcceptanceCriterion> acceptanceCriteria,
+                                                     String ticketId) {
         List<String> missing = new ArrayList<>();
 
         if (ticketId == null || ticketId.isBlank()) {
@@ -320,20 +335,33 @@ public class SpecPackMarkdownParser {
         }
 
         for (String requiredSectionKey : REQUIRED_SECTION_KEYS) {
-            // Skip subsections - they are checked under their parent if parent has a
-            // hierarchy
+            // Skip subsections - they are checked under their parent if parent has a hierarchy
             if (PARENT_CHILD_HIERARCHY.values().stream().anyMatch(children -> children.contains(requiredSectionKey))) {
                 continue;
             }
 
             // If this section is a parent with children, check all children
             if (PARENT_CHILD_HIERARCHY.containsKey(requiredSectionKey)) {
-                if (!sections.containsKey(requiredSectionKey)) {
+                if (HEADING_ONLY_SECTION_KEYS.contains(requiredSectionKey)) {
+                    if (!sections.containsKey(requiredSectionKey)) {
+                        missing.add("section:" + requiredSectionKey);
+                    }
+                    continue;
+                }
+                List<String> children = PARENT_CHILD_HIERARCHY.get(requiredSectionKey);
+                boolean anyChildHasContent = false;
+                for (String childKey : children) {
+                    String childContent = sections.get(childKey);
+                    if (childContent != null && !childContent.trim().isEmpty()) {
+                        anyChildHasContent = true;
+                        break;
+                    }
+                }
+                if (!anyChildHasContent) {
                     missing.add("section:" + requiredSectionKey);
                 }
             } else {
-                // Leaf section: pass if it has direct content OR has dynamic subsections with
-                // content
+                // Leaf section: pass if it has direct content OR has dynamic subsections with content
                 List<MarkdownSection> dynamicChildren = findDynamicChildren(sectionList, requiredSectionKey);
                 if (!dynamicChildren.isEmpty()) {
                     for (MarkdownSection child : dynamicChildren) {
@@ -351,7 +379,7 @@ public class SpecPackMarkdownParser {
         }
 
         if (acceptanceCriteria.isEmpty()) {
-            missing.add("section:TIÊU_CHÍ_CHẤP_NHẬN rows");
+            missing.add("section:ACCEPTANCE_CRITERIA rows");
         }
 
         return missing;
@@ -380,18 +408,18 @@ public class SpecPackMarkdownParser {
     }
 
     private Map<String, Object> buildParsedSummary(String ticketId,
-            String parseMode,
-            String parseStatus,
-            String artifactStatus,
-            String contentHash,
-            Map<String, String> sections,
-            List<MarkdownTable> tables,
-            List<AcceptanceCriterion> acceptanceCriteria,
-            OpenIssueStats openIssueStats,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors,
-            List<String> requiredFieldsMissing,
-            List<MarkdownPlaceholder> placeholders) {
+                                                   String parseMode,
+                                                   String parseStatus,
+                                                   String artifactStatus,
+                                                   String contentHash,
+                                                   Map<String, String> sections,
+                                                   List<MarkdownTable> tables,
+                                                   List<AcceptanceCriterion> acceptanceCriteria,
+                                                   OpenIssueStats openIssueStats,
+                                                   List<ParsingIssue> warnings,
+                                                   List<ParsingIssue> errors,
+                                                   List<String> requiredFieldsMissing,
+                                                   List<MarkdownPlaceholder> placeholders) {
         int acValidFormatCount = (int) acceptanceCriteria.stream().filter(AcceptanceCriterion::validFormat).count();
         String firstAcId = acceptanceCriteria.isEmpty() ? null : acceptanceCriteria.getFirst().id();
         long requiredSectionsMissingCount = requiredFieldsMissing.stream()
@@ -415,38 +443,43 @@ public class SpecPackMarkdownParser {
         summary.put("error_count", errors.size());
         summary.put("placeholder_count", placeholders.size());
         summary.put("open_issue_total_count", openIssueStats.totalCount());
-        summary.put("open_issue_open_count", openIssueStats.priorityCounts());
+        summary.put("open_issue_open_count", openIssueStats.openCount());
+        summary.put("open_issue_closed_count", openIssueStats.closedCount());
         // missing required sections
         summary.put("required_sections_missing_count", requiredSectionsMissingCount);
         summary.put("has_missing_required_sections", requiredSectionsMissingCount > 0);
         // detection flags
-        summary.put("has_open_issue_detected", sections.containsKey("CÁC_VẤN_ĐỀ_MỞ"));
-        summary.put("has_risk_detected", sections.containsKey("RỦI_RO"));
+        summary.put("has_open_issue_detected", sections.containsKey("OPEN_ISSUES"));
+        summary.put("has_risk_detected", sections.containsKey("OPEN_ISSUES"));
         summary.put("has_traceability_detected", sections.containsKey("ASSUMPTIONS_INFERENCE_LOG"));
         return summary;
     }
 
     private OpenIssueStats countOpenIssueStats(List<MarkdownTable> tables) {
         int totalCount = 0;
-        Map<String, Integer> priorityCounts = new LinkedHashMap<>();
+        int openCount = 0;
+        int closedCount = 0;
         for (MarkdownTable table : tables) {
-            if (!"CÁC_VẤN_ĐỀ_MỞ".equals(table.sectionKey())) {
+            if (!"OPEN_ISSUES".equals(table.sectionKey())) {
                 continue;
             }
-            int priorityIndex = findColumnIndex(table.headers(), "ưu tiên", "uu tien", "priority");
+            int statusIndex = findColumnIndex(table.headers(), "status");
             for (List<String> row : table.rows()) {
                 totalCount++;
-                String priority = priorityIndex >= 0 ? cell(row, priorityIndex) : "";
-                String priorityKey = priority.isBlank() ? "UNSPECIFIED" : priority.toUpperCase(Locale.ROOT);
-                priorityCounts.merge(priorityKey, 1, Integer::sum);
+                String status = statusIndex >= 0 ? cell(row, statusIndex) : "";
+                if ("open".equalsIgnoreCase(status)) {
+                    openCount++;
+                } else if ("closed".equalsIgnoreCase(status)) {
+                    closedCount++;
+                }
             }
         }
-        return new OpenIssueStats(totalCount, priorityCounts);
+        return new OpenIssueStats(totalCount, openCount, closedCount);
     }
 
     private String determineParseStatus(String parseMode,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors) {
+                                        List<ParsingIssue> warnings,
+                                        List<ParsingIssue> errors) {
         if (!errors.isEmpty()) {
             return "FAILED";
         }
@@ -457,13 +490,14 @@ public class SpecPackMarkdownParser {
     }
 
     private String inferTicketId(Map<String, String> frontMatter,
-            Map<String, String> headerMetadata,
-            String sourcePath,
-            Map<String, String> sections) {
+                                 Map<String, String> headerMetadata,
+                                 String sourcePath,
+                                 Map<String, String> sections) {
         String frontMatterTicketId = firstNonBlank(
                 frontMatter.get("ticket_id"),
                 frontMatter.get("ticket-id"),
-                frontMatter.get("ticketid"));
+                frontMatter.get("ticketid")
+        );
         if (isTicketId(frontMatterTicketId)) {
             return frontMatterTicketId;
         }
@@ -476,7 +510,8 @@ public class SpecPackMarkdownParser {
         String headerTicketId = firstNonBlank(
                 headerMetadata.get("ticket_id"),
                 headerMetadata.get("ticket-id"),
-                headerMetadata.get("ticketid"));
+                headerMetadata.get("ticketid")
+        );
         if (isTicketId(headerTicketId)) {
             return headerTicketId;
         }
@@ -541,8 +576,7 @@ public class SpecPackMarkdownParser {
         for (int i = 0; i < normalizedHeaders.size(); i++) {
             for (String alias : aliases) {
                 String normalizedAlias = normalizeSectionAlias(alias);
-                if (normalizedHeaders.get(i).equals(normalizedAlias)
-                        || normalizedHeaders.get(i).contains(normalizedAlias)) {
+                if (normalizedHeaders.get(i).equals(normalizedAlias) || normalizedHeaders.get(i).contains(normalizedAlias)) {
                     return i;
                 }
             }
@@ -563,24 +597,23 @@ public class SpecPackMarkdownParser {
             String message,
             String sourcePath,
             String sectionKey,
-            int line) {
-    }
+            int line
+    ) {}
 
     public record AcceptanceCriterion(
             String id,
             String description,
-            boolean unitTest,
-            boolean integrationTest,
-            boolean e2eTest,
-            boolean blackBoxTest,
+            String testable,
+            String notes,
             boolean validFormat,
-            Integer sequenceNumber) {
-    }
+            Integer sequenceNumber
+    ) {}
 
     public record OpenIssueStats(
             int totalCount,
-            Map<String, Integer> priorityCounts) {
-    }
+            int openCount,
+            int closedCount
+    ) {}
 
     public record ParsedArtifact(
             String sourcePath,
@@ -601,15 +634,15 @@ public class SpecPackMarkdownParser {
             String normalizedContent,
             String contentHash,
             String parserVersion,
-            Map<String, Object> parsedSummary) {
+            Map<String, Object> parsedSummary
+    ) {
         public boolean containsAnywhere(String needle) {
             if (needle == null || needle.isBlank()) {
                 return false;
             }
             String low = needle.toLowerCase(Locale.ROOT);
             return sections.values().stream().anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low))
-                    || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream)
-                            .anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
+                    || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream).anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
         }
     }
 }

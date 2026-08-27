@@ -105,9 +105,6 @@ class UserAccountAdminApiIntegrationTest {
     @MockBean
     private UserAccountAdminRepositoryPort repository;
 
-    @MockBean
-    private com.sdd.platform.application.usecase.governance.AdminAuditLogService adminAuditLogService;
-
     private AppUser admin;
     private AppUser viewer;
     private UUID adminRoleId;

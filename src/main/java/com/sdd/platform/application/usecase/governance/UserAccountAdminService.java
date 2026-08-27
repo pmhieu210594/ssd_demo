@@ -14,10 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -26,16 +24,12 @@ public class UserAccountAdminService {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
     private static final String PASSWORD_ALGO = "bcrypt";
-    private static final String MODULE = "MEMBER_USER";
-    private static final String ENTITY_TYPE = "USER";
 
     private final UserAccountAdminRepositoryPort repository;
-    private final AdminAuditLogService adminAuditLogService;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    public UserAccountAdminService(UserAccountAdminRepositoryPort repository, AdminAuditLogService adminAuditLogService) {
+    public UserAccountAdminService(UserAccountAdminRepositoryPort repository) {
         this.repository = repository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -65,8 +59,7 @@ public class UserAccountAdminService {
     @Transactional(readOnly = true)
     public UserAccountAdminView get(UUID accountId, AppUser caller) {
         requireAdmin(caller);
-        UserAccountAdminView view = findExisting(accountId);
-        return view;
+        return findExisting(accountId);
     }
 
     @Transactional(readOnly = true)
@@ -87,42 +80,35 @@ public class UserAccountAdminService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            String normalizedUsername = normalizeUsername(username);
-            String normalizedFullname = normalizeFullname(fullname, normalizedUsername);
-            String normalizedEmail = normalizeEmail(email);
-            validatePassword(password, confirmPassword);
-            validateRole(roleId);
-            if (repository.existsUsername(normalizedUsername, null)) {
-                throw new BusinessRuleException("Pages.UserAccounts.Username.Duplicate");
-            }
-
-            UUID accountId = UUID.randomUUID();
-            UUID memberKey = UUID.randomUUID();
-            OffsetDateTime now = OffsetDateTime.now();
-            String actor = resolveActor(caller);
-            String passwordHash = passwordEncoder.encode(password);
-
-            repository.insertMember(memberKey, roleId, normalizedUsername, actor, now);
-            repository.insertAccount(
-                    accountId,
-                    memberKey,
-                    normalizedUsername,
-                    normalizedFullname,
-                    normalizedEmail,
-                    passwordHash,
-                    PASSWORD_ALGO,
-                    Boolean.TRUE.equals(active),
-                    actor,
-                    now
-            );
-            UserAccountAdminView created = findExisting(accountId);
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, accountId.toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
+        String normalizedUsername = normalizeUsername(username);
+        String normalizedFullname = normalizeFullname(fullname, normalizedUsername);
+        String normalizedEmail = normalizeEmail(email);
+        validatePassword(password, confirmPassword);
+        validateRole(roleId);
+        if (repository.existsUsername(normalizedUsername, null)) {
+            throw new BusinessRuleException("Pages.UserAccounts.Username.Duplicate");
         }
+
+        UUID accountId = UUID.randomUUID();
+        UUID memberKey = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        String actor = resolveActor(caller);
+        String passwordHash = passwordEncoder.encode(password);
+
+        repository.insertMember(memberKey, roleId, normalizedUsername, actor, now);
+        repository.insertAccount(
+                accountId,
+                memberKey,
+                normalizedUsername,
+                normalizedFullname,
+                normalizedEmail,
+                passwordHash,
+                PASSWORD_ALGO,
+                Boolean.TRUE.equals(active),
+                actor,
+                now
+        );
+        return findExisting(accountId);
     }
 
     @Transactional
@@ -135,105 +121,66 @@ public class UserAccountAdminService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            UserAccountAdminView existing = findExisting(accountId);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-            RoleOption nextRole = validateRole(roleId);
-            boolean nextActive = Boolean.TRUE.equals(active);
-            if (existing.isActive() && isAdminRole(existing)
-                    && (!nextActive || !"ADMIN".equalsIgnoreCase(nextRole.getRoleName()))) {
-                assertNotLastActiveAdmin(accountId);
-            }
-
-            OffsetDateTime now = OffsetDateTime.now();
-            String actor = resolveActor(caller);
-            int accountRows = repository.updateAccount(
-                    accountId,
-                    normalizeFullname(fullname, existing.getUsername()),
-                    normalizeEmail(email),
-                    nextActive,
-                    actor,
-                    now
-            );
-            int memberRows = repository.updateMemberRole(existing.getMemberKey(), roleId, actor, now);
-            if (accountRows == 0 || memberRows == 0) {
-                throw new NotFoundException("Pages.UserAccounts.NotFound");
-            }
-            UserAccountAdminView updated = findExisting(accountId);
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, accountId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, accountId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        UserAccountAdminView existing = findExisting(accountId);
+        RoleOption nextRole = validateRole(roleId);
+        boolean nextActive = Boolean.TRUE.equals(active);
+        if (existing.isActive() && isAdminRole(existing)
+                && (!nextActive || !"ADMIN".equalsIgnoreCase(nextRole.getRoleName()))) {
+            assertNotLastActiveAdmin(accountId);
         }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        String actor = resolveActor(caller);
+        int accountRows = repository.updateAccount(
+                accountId,
+                normalizeFullname(fullname, existing.getUsername()),
+                normalizeEmail(email),
+                nextActive,
+                actor,
+                now
+        );
+        int memberRows = repository.updateMemberRole(existing.getMemberKey(), roleId, actor, now);
+        if (accountRows == 0 || memberRows == 0) {
+            throw new NotFoundException("Pages.UserAccounts.NotFound");
+        }
+        return findExisting(accountId);
     }
 
     @Transactional
     public UserAccountAdminView activate(UUID accountId, AppUser caller) {
         requireAdmin(caller);
-        try {
-            UserAccountAdminView existing = findExisting(accountId);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-            updateActive(accountId, true, caller);
-            UserAccountAdminView updated = findExisting(accountId);
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, accountId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, accountId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
-        }
+        findExisting(accountId);
+        updateActive(accountId, true, caller);
+        return findExisting(accountId);
     }
 
     @Transactional
     public UserAccountAdminView deactivate(UUID accountId, AppUser caller) {
         requireAdmin(caller);
-        try {
-            UserAccountAdminView existing = findExisting(accountId);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
-            if (existing.isActive() && isAdminRole(existing)) {
-                assertNotLastActiveAdmin(accountId);
-            }
-            updateActive(accountId, false, caller);
-            UserAccountAdminView updated = findExisting(accountId);
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, accountId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, accountId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        UserAccountAdminView existing = findExisting(accountId);
+        if (existing.isActive() && isAdminRole(existing)) {
+            assertNotLastActiveAdmin(accountId);
         }
+        updateActive(accountId, false, caller);
+        return findExisting(accountId);
     }
 
     @Transactional
     public UserAccountAdminView resetPassword(UUID accountId, String password, String confirmPassword, AppUser caller) {
         requireAdmin(caller);
-        try {
-            findExisting(accountId);
-            validatePassword(password, confirmPassword);
-            int rows = repository.updatePassword(
-                    accountId,
-                    passwordEncoder.encode(password),
-                    PASSWORD_ALGO,
-                    resolveActor(caller),
-                    OffsetDateTime.now()
-            );
-            if (rows == 0) {
-                throw new NotFoundException("Pages.UserAccounts.NotFound");
-            }
-            UserAccountAdminView updated = findExisting(accountId);
-            // The view has no password_hash field to diff automatically; record the
-            // field name explicitly so changed_fields still reflects the change,
-            // matching AC-ADMIN-AUDIT-LOG-4 (name visible, value never stored).
-            Map<String, Object> beforeWithPasswordMarker = new LinkedHashMap<>(adminAuditLogService.snapshot(updated));
-            beforeWithPasswordMarker.put("password_hash", "OLD");
-            Map<String, Object> afterWithPasswordMarker = new LinkedHashMap<>(beforeWithPasswordMarker);
-            afterWithPasswordMarker.put("password_hash", "NEW");
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, accountId.toString(),
-                    beforeWithPasswordMarker, afterWithPasswordMarker);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, accountId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        findExisting(accountId);
+        validatePassword(password, confirmPassword);
+        int rows = repository.updatePassword(
+                accountId,
+                passwordEncoder.encode(password),
+                PASSWORD_ALGO,
+                resolveActor(caller),
+                OffsetDateTime.now()
+        );
+        if (rows == 0) {
+            throw new NotFoundException("Pages.UserAccounts.NotFound");
         }
+        return findExisting(accountId);
     }
 
     private void updateActive(UUID accountId, boolean active, AppUser caller) {

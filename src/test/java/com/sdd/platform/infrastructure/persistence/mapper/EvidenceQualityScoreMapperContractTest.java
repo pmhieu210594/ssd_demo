@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.LineageEntry;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
-import com.sdd.platform.application.usecase.quality.ScoreThresholdConfigService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -67,15 +66,13 @@ class EvidenceQualityScoreMapperContractTest {
                         "spec_pack_ac_numbering"
                 ))));
 
-        ScoreThresholdConfigService scoreThresholdConfigService = mock(ScoreThresholdConfigService.class);
-        when(scoreThresholdConfigService.displayNameForCode("GOOD")).thenReturn("Good");
-
-        ScoreResult result = EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper, scoreThresholdConfigService).mapRow(rs, 0);
+        ScoreResult result = EvidenceQualityScoreMapper.scoreResultRowMapper(objectMapper).mapRow(rs, 0);
 
         assertEquals(scoreId, result.evidenceQualityScoreId());
         assertEquals(metricValueId, result.metricValueId());
         assertEquals(ticketId, result.ticketId());
         assertEquals(new BigDecimal("86.50"), result.score());
+        assertEquals("Good", result.band());
         assertEquals(1, result.breakdown().size());
         assertEquals(List.of("test-results.md"), result.missing());
         assertEquals(List.of("TEST_RESULTS:PARSE_ERROR"), result.parseErrors());

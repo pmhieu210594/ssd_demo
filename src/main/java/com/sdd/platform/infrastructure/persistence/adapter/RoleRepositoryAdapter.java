@@ -20,8 +20,8 @@ public class RoleRepositoryAdapter implements RoleRepositoryPort {
     }
 
     @Override
-    public List<Role> findActive(String keyword, String status) {
-        return mapper.findActive(keyword, status);
+    public List<Role> findActive(String keyword, String sort) {
+        return mapper.findActive(keyword, sort);
     }
 
     @Override

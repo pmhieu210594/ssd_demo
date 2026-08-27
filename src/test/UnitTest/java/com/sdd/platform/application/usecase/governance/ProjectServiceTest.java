@@ -39,14 +39,11 @@ class ProjectServiceTest {
     @Mock
     private ProjectRepositoryPort repository;
 
-    @Mock
-    private AdminAuditLogService adminAuditLogService;
-
     private ProjectService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectService(repository, adminAuditLogService);
+        service = new ProjectService(repository);
     }
 
     @Test
@@ -171,11 +168,8 @@ class ProjectServiceTest {
         when(repository.existsActiveAlias(CUSTOMER_ID, "Project B", PROJECT_ID)).thenReturn(false);
         when(repository.findActiveTeamIdsByIds(List.of(TEAM_ID_2))).thenReturn(List.of(TEAM_ID_2));
         when(repository.update(any())).thenReturn(1);
-        // update() now reads team assignments 3x: once for the pre-mutation audit
-        // snapshot, once for reconciliation (must match the "before" state so the
-        // diff still fires), and once for the final post-sync reload.
-        when(repository.findActiveTeamAssignments(PROJECT_ID)).thenReturn(
-                List.of(activeAssignment(TEAM_ID)), List.of(activeAssignment(TEAM_ID)), List.of(activeAssignment(TEAM_ID_2)));
+        when(repository.findActiveTeamAssignments(PROJECT_ID)).thenReturn(List.of(activeAssignment(TEAM_ID_2)));
+        when(repository.findActiveTeamAssignments(PROJECT_ID)).thenReturn(List.of(activeAssignment(TEAM_ID)), List.of(activeAssignment(TEAM_ID_2)));
 
         service.update(PROJECT_ID, CUSTOMER_ID, " Project B ", "  Customer Facing  ", " info ", List.of(TEAM_ID_2), adminUser());
 

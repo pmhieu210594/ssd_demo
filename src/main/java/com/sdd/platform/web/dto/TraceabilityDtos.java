@@ -1,7 +1,6 @@
 package com.sdd.platform.web.dto;
 
 import com.sdd.platform.application.usecase.traceability.TraceabilityModels;
-import com.sdd.platform.application.usecase.traceability.TraceabilityModels.TraceabilityReviewCommentRow;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -20,8 +19,7 @@ public final class TraceabilityDtos {
             boolean requiredFlag,
             String sourcePath,
             boolean existsFlag,
-            OffsetDateTime collectedAt,
-            Integer schemaVersion
+            OffsetDateTime collectedAt
     ) {
         public static TraceabilityArtifactDto from(TraceabilityModels.ArtifactCoverage row) {
             return new TraceabilityArtifactDto(
@@ -32,8 +30,7 @@ public final class TraceabilityDtos {
                     row.requiredFlag(),
                     row.sourcePath(),
                     row.existsFlag(),
-                    row.collectedAt(),
-                    row.schemaVersion()
+                    row.collectedAt()
             );
         }
     }
@@ -73,7 +70,6 @@ public final class TraceabilityDtos {
             String commitHash,
             String branchName,
             String messageHash,
-            String commitUrl,
             OffsetDateTime committedAt,
             OffsetDateTime collectedAt
     ) {
@@ -83,7 +79,6 @@ public final class TraceabilityDtos {
                     row.commitHash(),
                     row.branchName(),
                     row.messageHash(),
-                    row.commitUrl(),
                     row.committedAt(),
                     row.collectedAt()
             );
@@ -188,8 +183,7 @@ public final class TraceabilityDtos {
             int prCount,
             int commitCount,
             int ciCount,
-            int brokenLinkCount,
-            int reviewRoundCount
+            int brokenLinkCount
     ) {
         public static TraceabilitySummaryDto from(TraceabilityModels.Summary summary) {
             return new TraceabilitySummaryDto(
@@ -203,30 +197,7 @@ public final class TraceabilityDtos {
                     summary.prCount(),
                     summary.commitCount(),
                     summary.ciCount(),
-                    summary.brokenLinkCount(),
-                    summary.reviewRoundCount()
-            );
-        }
-    }
-
-    public record TraceabilityReviewCommentDto(
-            UUID reviewCommentId,
-            String filePathHash,
-            Integer lineNumber,
-            String commentSummary,
-            String state,
-            String submittedAt,
-            String submittedBy
-    ) {
-        public static TraceabilityReviewCommentDto from(TraceabilityReviewCommentRow reviewComment) {
-            return new TraceabilityReviewCommentDto(
-                    reviewComment.reviewCommentId(),
-                    reviewComment.filePathHash(),
-                    reviewComment.lineNumber(),
-                    reviewComment.commentSummary(),
-                    reviewComment.state(),
-                    reviewComment.submittedAt(),
-                    reviewComment.submittedBy()
+                    summary.brokenLinkCount()
             );
         }
     }
@@ -239,8 +210,7 @@ public final class TraceabilityDtos {
             List<TraceabilityCiRunDto> ciRuns,
             List<TraceabilityLinkDto> links,
             List<TraceabilityBrokenLinkDto> brokenLinks,
-            List<TraceabilityTimelineEventDto> timelineEvents,
-            List<TraceabilityReviewCommentDto> reviewComments
+            List<TraceabilityTimelineEventDto> timelineEvents
     ) {
         public static TraceabilityResponseDto from(TraceabilityModels.TraceabilityView view) {
             return new TraceabilityResponseDto(
@@ -251,8 +221,7 @@ public final class TraceabilityDtos {
                     view.ciRuns().stream().map(TraceabilityCiRunDto::from).toList(),
                     view.links().stream().map(TraceabilityLinkDto::from).toList(),
                     view.brokenLinks().stream().map(TraceabilityBrokenLinkDto::from).toList(),
-                    view.timelineEvents().stream().map(TraceabilityTimelineEventDto::from).toList(),
-                    view.reviewComments().stream().map(TraceabilityReviewCommentDto::from).toList()
+                    view.timelineEvents().stream().map(TraceabilityTimelineEventDto::from).toList()
             );
         }
     }

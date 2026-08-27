@@ -2,440 +2,252 @@ package com.sdd.platform.domain.service.markdown.reviewchecklist;
 
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore;
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownDocument;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownIssue;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownPlaceholder;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownSection;
-import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownTable;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class ReviewChecklistMarkdownParser {
 
-    private static final String PARSER_VERSION = "review-checklist-markdown-parser-v2";
-    private static final String DEFAULT_PARSE_MODE = "draft";
+    private final MarkdownParserCore core = new MarkdownParserCore();
 
-    // Path: .../changes/<TICKET>/review-checklist.md
-    private static final Pattern SOURCE_PATH_PATTERN = Pattern
-            .compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/review-checklist\\.md$");
+    // ===== REGEX =====
+    private static final Pattern CHECKLIST_PATTERN =
+            Pattern.compile("^\\s*[-*]\\s+((\\[[ xX]\\])\\s+)?");
 
-    public static final List<String> ALL_FIELDS = List.of();
+    private static final Pattern TICKET_PATTERN =
+            Pattern.compile("(TICKET[-_ ]?\\d+)", Pattern.CASE_INSENSITIVE);
 
-    public static final List<String> REQUIRED_SECTION_KEYS = List.of(
-        "SPEC_AC",
-        "THIẾT_KẾ_PHỤ_THUỘC",
-        "BẢO_MẬT",
-        "HIỆU_NĂNG",
-        "TƯƠNG_THÍCH",
-        "LOGGING_AUDIT",
-        "XỬ_LÝ_LỖI",
-        "KIỂM_THỬ",
-        "VẬN_HÀNH",
-        "BẢNG_ÁNH_XẠ_AC_CHECKLIST_ITEMS"
-        
-    );
+    // ===== KEYWORDS =====
+    private static final List<String> SECURITY = List.of("security", "auth", "secret");
+    private static final List<String> TEST = List.of("test", "qa");
+    private static final List<String> PERFORMANCE = List.of("performance", "latency");
 
-    private static final Map<String, List<String>> PARENT_CHILD_HIERARCHY = Map.ofEntries();
+    public ParsedArtifact parse(String content,
+                                String sourcePath,
+                                Map<String, Object> metadata) {
 
-    private static final Set<String> HEADING_ONLY_SECTION_KEYS = Set.copyOf(PARENT_CHILD_HIERARCHY.keySet());
+        ParsedArtifact result = new ParsedArtifact();
 
-    private final MarkdownParserCore core;
+        // ADD: init metadata
+        result.setArtifactType("review_checklist");
+        result.setWarnings(new ArrayList<>());
+        result.setErrors(new ArrayList<>());
+        result.setSourcePath(sourcePath);
 
-    public ReviewChecklistMarkdownParser() {
-        this(new MarkdownParserCore());
-    }
-
-    protected ReviewChecklistMarkdownParser(MarkdownParserCore core) {
-        this.core = core;
-    }
-
-    public ParsedArtifact parse(String content) {
-        return parse(content, null, DEFAULT_PARSE_MODE);
-    }
-
-    public ParsedArtifact parse(String content, String sourcePath) {
-        return parse(content, sourcePath, DEFAULT_PARSE_MODE);
-    }
-
-    public ParsedArtifact parse(String content, String sourcePath, String parseMode) {
-        String normalizedParseMode = normalizeParseMode(parseMode);
-        MarkdownDocument document = core.parse(content != null ? content : "", sourcePath);
-
-        List<ParsingIssue> warnings = new ArrayList<>(convertIssues(document.warnings()));
-        List<ParsingIssue> errors = new ArrayList<>(convertIssues(document.errors()));
-        List<MarkdownPlaceholder> placeholders = List.copyOf(document.placeholders());
-
-        Map<String, String> frontMatter = new LinkedHashMap<>(document.frontMatter());
-        Map<String, String> headerMetadata = new LinkedHashMap<>(document.headerMetadata());
-        Map<String, String> sections = document.sectionMap();
-        List<MarkdownSection> sectionList = List.copyOf(document.sections());
-        List<MarkdownTable> tables = List.copyOf(document.tables());
-
-        String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath, sections);
-        if (ticketId == null || ticketId.isBlank()) {
-            warnings.add(new ParsingIssue(
-                    "ticket_id_missing",
-                    "warning",
-                    "Unable to infer ticket_id from front matter, header metadata, or source path",
-                    sourcePath,
-                    null,
-                    -1));
+        // 1. validate
+        if (content == null || content.trim().isEmpty()) {
+            result.getErrors().add("Empty content");
+            result.setParseStatus(ParserResultStatus.FAIL);
+            return result;
         }
 
-        List<String> missingFields = detectMissingFields(sections, sectionList);
-        if (!missingFields.isEmpty()) {
-            warnings.add(new ParsingIssue(
-                    "required_fields_missing",
-                    "warning",
-                    "Missing required fields: " + String.join(", ", missingFields),
-                    sourcePath,
-                    null,
-                    -1));
+        // ADD: preprocess remove code block
+        content = removeCodeBlocks(content);
+
+        // 2. parse via core
+        MarkdownDocument doc = core.parse(content, sourcePath);
+
+        // 3. checklist count
+        int checklistCount = countChecklist(doc);
+        result.setChecklistItemCount(checklistCount);
+
+        if (checklistCount == 0) {
+            result.getWarnings().add("No checklist items found");
         }
 
-        if (!placeholders.isEmpty()) {
-            warnings.add(new ParsingIssue(
-                    "placeholder_detected",
-                    "warning",
-                    "Placeholder values were detected in required fields",
-                    sourcePath,
-                    null,
-                    -1));
+        // 4. ticket id
+        String ticketId = extractTicketId(doc, metadata);
+        result.setTicketId(ticketId);
+
+        if (ticketId == null || ticketId.isEmpty()) {
+            result.getWarnings().add("Missing ticket_id");
         }
 
-        boolean isEmpty = document.normalizedContent() == null
-                || document.normalizedContent().trim().isEmpty();
+        // 5. perspective
+        detectPerspectives(doc, result);
 
-        boolean artifactExists = !isEmpty;
-        String artifactStatus = artifactExists ? (errors.isEmpty() ? "present" : "invalid") : "missing";
-        String parseStatus = determineParseStatus(normalizedParseMode, warnings, errors);
-
-        Map<String, Object> parsedSummary = buildParsedSummary(
-                ticketId,
-                normalizedParseMode,
-                parseStatus,
-                artifactStatus,
-                document.contentHash(),
-                sections,
-                tables,
-                warnings,
-                errors,
-                missingFields,
-                placeholders);
-        return new ParsedArtifact(
-                sourcePath,
-                ticketId,
-                normalizedParseMode,
-                parseStatus,
-                artifactStatus,
-                artifactExists,
-                frontMatter,
-                headerMetadata,
-                sections,
-                tables,
-                List.of(),
-                placeholders,
-                warnings,
-                errors,
-                missingFields,
-                document.normalizedContent(),
-                document.contentHash(),
-                PARSER_VERSION,
-                parsedSummary);
-    }
-
-    // ===== private helpers =====
-    private List<ParsingIssue> convertIssues(List<MarkdownIssue> issues) {
-        return issues.stream()
-                .map(issue -> new ParsingIssue(
-                        issue.code(),
-                        issue.severity(),
-                        issue.message(),
-                        issue.path(),
-                        issue.sectionKey(),
-                        issue.line()))
-                .collect(Collectors.toCollection(ArrayList::new));
-    }
-
-    public static List<String> requiredSectionKeys() {
-        List<String> keys = new ArrayList<>();
-        for (String field : ALL_FIELDS) {
-            keys.add(field.toUpperCase(Locale.ROOT));
+        if (result.getPerspectiveCount() == 0) {
+            result.getWarnings().add("No perspective detected");
         }
-        keys.addAll(REQUIRED_SECTION_KEYS);
-        for (List<String> children : PARENT_CHILD_HIERARCHY.values()) {
-            keys.addAll(children);
-        }
-        return List.copyOf(keys);
+
+        // ADD: source hash
+        result.setSourceHash(hashContent(content));
+
+        // 6. status (MODIFIED)
+        result.setParseStatus(evaluateStatus(result));
+
+        return result;
     }
 
-    public static boolean isHeadingOnlySection(String sectionKey) {
-        return sectionKey != null && HEADING_ONLY_SECTION_KEYS.contains(sectionKey);
-    }
+    // ===== CHECKLIST =====
+    private int countChecklist(MarkdownDocument doc) {
+        int count = 0;
 
-    private List<String> detectMissingFields(Map<String, String> sections,
-            List<MarkdownSection> sectionList) {
-        List<String> missing = new ArrayList<>();
-        for (String requiredSectionKey : REQUIRED_SECTION_KEYS) {
-            List<MarkdownSection> dynamicChildren = findDynamicChildren(sectionList, requiredSectionKey);
-            boolean sectionPresent = sections.containsKey(requiredSectionKey);
-            boolean sectionHasBody = sectionPresent && sections.get(requiredSectionKey) != null
-                    && !sections.get(requiredSectionKey).trim().isEmpty();
-            boolean sectionIsHeadingOnly = PARENT_CHILD_HIERARCHY.containsKey(requiredSectionKey);
-            boolean sectionPresentByHeadingOnly = sectionIsHeadingOnly && sectionPresent && !dynamicChildren.isEmpty();
+        String[] lines = doc.normalizedContent().split("\\R");
 
-            if (!sectionPresent || (!sectionHasBody && !sectionPresentByHeadingOnly)) {
-                missing.add("section:" + requiredSectionKey);
-            }
-
-            if (!dynamicChildren.isEmpty()) {
-                for (MarkdownSection child : dynamicChildren) {
-                    if (child.body() == null || child.body().trim().isEmpty()) {
-                        missing.add("section:" + child.canonicalKey());
-                    }
-                }
+        for (String line : lines) {
+            if (CHECKLIST_PATTERN.matcher(line).find()) {
+                count++;
             }
         }
 
-        for (String field : ALL_FIELDS) {
-            String value = sections.get(field.toUpperCase());
-            if (value == null || value.isBlank()) {
-                missing.add("section:" + field.toUpperCase());
-            }
-        }
-        return missing;
+        return count;
     }
 
-    private List<MarkdownSection> findDynamicChildren(List<MarkdownSection> sectionList, String parentKey) {
-        List<MarkdownSection> children = new ArrayList<>();
-        int parentLevel = -1;
-        boolean found = false;
-        for (MarkdownSection section : sectionList) {
-            if (!found) {
-                if (section.canonicalKey().equals(parentKey)) {
-                    parentLevel = section.level();
-                    found = true;
-                }
-                continue;
-            }
-            if (section.level() <= parentLevel) {
-                break;
-            }
-            if (section.level() == parentLevel + 1) {
-                children.add(section);
-            }
-        }
-        return children;
-    }
+    // ===== TICKET =====
+    private String extractTicketId(MarkdownDocument doc, Map<String, Object> metadata) {
 
-    private String determineParseStatus(String parseMode,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors) {
-        if (!errors.isEmpty()) {
-            return "FAILED";
-        }
-        if (!warnings.isEmpty()) {
-            return "PARTIAL";
-        }
-        return "official".equalsIgnoreCase(parseMode) ? "OFFICIAL" : "DRAFT";
-    }
-
-    private String normalizeParseMode(String parseMode) {
-        if (parseMode == null || parseMode.isBlank()) {
-            return DEFAULT_PARSE_MODE;
-        }
-        return parseMode.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private String inferTicketId(Map<String, String> frontMatter,
-            Map<String, String> headerMetadata,
-            String sourcePath,
-            Map<String, String> sections) {
-        String frontMatterTicketId = firstNonBlank(
-                frontMatter.get("ticket_id"),
-                frontMatter.get("ticket-id"),
-                frontMatter.get("ticketid"));
-        if (isTicketId(frontMatterTicketId)) {
-            return frontMatterTicketId;
+        // 1. metadata param
+        if (metadata != null && metadata.containsKey("ticket_id")) {
+            Object val = metadata.get("ticket_id");
+            if (val != null) return val.toString();
         }
 
-        String pathTicketId = ticketIdFromPath(sourcePath);
-        if (isTicketId(pathTicketId)) {
-            return pathTicketId;
+        // 2. front matter
+        if (doc.frontMatter().containsKey("ticket_id")) {
+            return doc.frontMatter().get("ticket_id");
         }
 
-        String headerTicketId = firstNonBlank(
-                headerMetadata.get("ticket_id"),
-                headerMetadata.get("ticket-id"),
-                headerMetadata.get("ticketid"));
-        if (isTicketId(headerTicketId)) {
-            return headerTicketId;
+        // 3. header metadata
+        if (doc.headerMetadata().containsKey("ticket_id")) {
+            return doc.headerMetadata().get("ticket_id");
         }
+
+        // 4. fallback scan normalized content
+        Matcher m = TICKET_PATTERN.matcher(doc.normalizedContent());
+        if (m.find()) return m.group(1);
 
         return null;
     }
 
-    private String firstNonBlank(String... candidates) {
-        if (candidates == null) {
-            return null;
+    // ===== PERSPECTIVE =====
+
+    private void detectPerspectives(MarkdownDocument doc, ParsedArtifact result) {
+
+        String text = doc.normalizedContent().toLowerCase();
+
+        result.setHasSecurityPerspective(containsAny(text, SECURITY));
+        result.setHasTestPerspective(containsAny(text, TEST));
+        result.setHasPerformancePerspective(containsAny(text, PERFORMANCE));
+
+        int count = 0;
+        if (result.isHasSecurityPerspective()) count++;
+        if (result.isHasTestPerspective()) count++;
+        if (result.isHasPerformancePerspective()) count++;
+
+        result.setPerspectiveCount(count);
+    }
+
+    private boolean containsAny(String text, List<String> keywords) {
+        for (String k : keywords) {
+            if (text.contains(k)) return true;
         }
-        for (String candidate : candidates) {
-            if (candidate != null && !candidate.isBlank()) {
-                return candidate.trim();
+        return false;
+    }
+
+    // ===== VALIDATION =====
+    // MODIFIED: dùng warnings/errors thay vì logic cũ
+    private ParserResultStatus evaluateStatus(ParsedArtifact result) {
+
+        if (!result.getErrors().isEmpty()) {
+            return ParserResultStatus.FAIL;
+        }
+
+        if (!result.getWarnings().isEmpty()) {
+            return ParserResultStatus.WARNING;
+        }
+
+        return ParserResultStatus.SUCCESS;
+    }
+
+    // ===== HELPERS =====
+    private String removeCodeBlocks(String content) {
+        return content.replaceAll("(?s)```.*?```", "");
+    }
+
+    private String hashContent(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
             }
+            return hex.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
-    private String ticketIdFromPath(String sourcePath) {
-        if (sourcePath == null || sourcePath.isBlank()) {
-            return null;
-        }
-        String normalized = sourcePath.replace('\\', '/');
-        Matcher matcher = SOURCE_PATH_PATTERN.matcher(normalized);
-        if (matcher.matches()) {
-            return matcher.group(1);
-        }
-        // fallback: extract from /changes/<ticketId>/...
-        int idx = normalized.indexOf("/changes/");
-        if (idx < 0)
-            return null;
-        String remaining = normalized.substring(idx + "/changes/".length());
-        String[] parts = remaining.split("/");
-        return parts.length > 0 && !parts[0].isBlank() ? parts[0] : null;
-    }
+    // ===== DTO =====
+    public static class ParsedArtifact {
+        private String ticketId;
+        private int checklistItemCount;
 
-    private boolean isTicketId(String value) {
-        return value != null && value.matches("^[A-Z0-9][A-Z0-9-]*$");
-    }
+        private boolean hasSecurityPerspective;
+        private boolean hasTestPerspective;
+        private boolean hasPerformancePerspective;
+        private int perspectiveCount;
 
-    private Map<String, Object> buildParsedSummary(
-            String ticketId,
-            String parseMode,
-            String parseStatus,
-            String artifactStatus,
-            String contentHash,
-            Map<String, String> sections,
-            List<MarkdownTable> tables,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors,
-            List<String> missingFields,
-            List<MarkdownPlaceholder> placeholders) {
-        Map<String, Object> summary = new LinkedHashMap<>();
+        private ParserResultStatus parseStatus;
 
-        // identity / parse context
-        summary.put("ticket_id", ticketId);
-        summary.put("parse_mode", parseMode);
-        summary.put("parse_status", parseStatus);
-        summary.put("artifact_status", artifactStatus);
-        summary.put("content_hash", contentHash);
-        summary.put("parser_version", PARSER_VERSION);
+        // ADD
+        private List<String> warnings;
+        private List<String> errors;
+        private String artifactType;
+        private String sourceHash;
+        private String sourcePath;
 
-        // section content
-        for (String key : ALL_FIELDS) {
-            summary.put(key, sections.get(key.toUpperCase()));
-        }
-        summary.put("security_review_present", sections.containsKey("SECURITY_PRIVACY_REVIEW"));
-        summary.put("security_review_checked", isChecklistSectionFullyChecked(
-                sections.get("SECURITY_PRIVACY_REVIEW")));
-        summary.put("test_review_present", sections.containsKey("TEST_REVIEW"));
-        summary.put("test_review_checked", isChecklistSectionFullyChecked(sections.get("TEST_REVIEW")));
+        public String getTicketId() { return ticketId; }
+        public void setTicketId(String ticketId) { this.ticketId = ticketId; }
 
-        // counts
-        summary.put("section_count", sections.size());
-        summary.put("table_count", tables.size());
-        summary.put("warning_count", warnings.size());
-        summary.put("error_count", errors.size());
-        summary.put("placeholder_count", placeholders.size());
-        summary.put("missing_required_count", missingFields.size());
-        summary.put("has_missing_required_sections", !missingFields.isEmpty());
-
-        // detection flags
-        summary.put("has_open_issue_detected", sections.containsKey("open_issues"));
-        summary.put("has_risk_detected", sections.containsKey("risks"));
-        summary.put("has_rollback_detected", sections.containsKey("rollback"));
-        summary.put("has_review_checklist_structure", !sections.isEmpty());
-
-        return summary;
-    }
-
-    private boolean isChecklistSectionFullyChecked(String sectionBody) {
-        if (sectionBody == null || sectionBody.isBlank()) {
-            return false;
+        public int getChecklistItemCount() { return checklistItemCount; }
+        public void setChecklistItemCount(int checklistItemCount) {
+            this.checklistItemCount = checklistItemCount;
         }
 
-        boolean hasCheckboxItem = false;
-        for (String line : sectionBody.lines().toList()) {
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
-            if (isCheckedCheckboxLine(trimmed)) {
-                hasCheckboxItem = true;
-                continue;
-            }
-            if (isUncheckedCheckboxLine(trimmed)) {
-                return false;
-            }
+        public boolean isHasSecurityPerspective() { return hasSecurityPerspective; }
+        public void setHasSecurityPerspective(boolean val) { this.hasSecurityPerspective = val; }
+
+        public boolean isHasTestPerspective() { return hasTestPerspective; }
+        public void setHasTestPerspective(boolean val) { this.hasTestPerspective = val; }
+
+        public boolean isHasPerformancePerspective() { return hasPerformancePerspective; }
+        public void setHasPerformancePerspective(boolean val) { this.hasPerformancePerspective = val; }
+
+        public int getPerspectiveCount() { return perspectiveCount; }
+        public void setPerspectiveCount(int val) { this.perspectiveCount = val; }
+
+        public ParserResultStatus getParseStatus() { return parseStatus; }
+        public void setParseStatus(ParserResultStatus parseStatus) {
+            this.parseStatus = parseStatus;
         }
-        return hasCheckboxItem;
-    }
 
-    private boolean isCheckedCheckboxLine(String line) {
-        return line.matches("(?i)^[-*+]\\s*\\[(x|v)\\]\\s+.+");
-    }
+        public List<String> getWarnings() { return warnings; }
+        public void setWarnings(List<String> warnings) { this.warnings = warnings; }
 
-    private boolean isUncheckedCheckboxLine(String line) {
-        return line.matches("(?i)^[-*+]\\s*\\[\\s*\\]\\s+.+");
-    }
+        public List<String> getErrors() { return errors; }
+        public void setErrors(List<String> errors) { this.errors = errors; }
 
-    // ===== DTOs =====
+        public String getArtifactType() { return artifactType; }
+        public void setArtifactType(String artifactType) { this.artifactType = artifactType; }
 
-    public record ParsingIssue(
-            String code,
-            String severity,
-            String message,
-            String sourcePath,
-            String sectionKey,
-            int line) {
-    }
+        public String getSourceHash() { return sourceHash; }
+        public void setSourceHash(String sourceHash) { this.sourceHash = sourceHash; }
 
-    public record ParsedArtifact(
-            String sourcePath,
-            String ticketId,
-            String parseMode,
-            String parseStatus,
-            String artifactStatus,
-            boolean artifactExists,
-            Map<String, String> frontMatter,
-            Map<String, String> headerMetadata,
-            Map<String, String> sections,
-            List<MarkdownTable> tables,
-            List<?> acceptanceCriteria,
-            List<MarkdownPlaceholder> placeholders,
-            List<ParsingIssue> warnings,
-            List<ParsingIssue> errors,
-            List<String> requiredFieldsMissing,
-            String normalizedContent,
-            String contentHash,
-            String parserVersion,
-            Map<String, Object> parsedSummary) {
-        public boolean containsAnywhere(String needle) {
-            if (needle == null || needle.isBlank()) {
-                return false;
-            }
-            String low = needle.toLowerCase(Locale.ROOT);
-            return sections.values().stream()
-                    .anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low))
-                    || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream)
-                            .anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
+        public String getSourcePath() { return sourcePath; }
+
+        public void setSourcePath(String sourcePath) {
+            this.sourcePath = sourcePath;
         }
+    }
+
+    public enum ParserResultStatus {
+        SUCCESS,
+        WARNING,
+        FAIL
     }
 }

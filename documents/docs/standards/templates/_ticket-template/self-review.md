@@ -33,17 +33,10 @@
 | item | reason | impact | owner | deadline |
 |---|---|---|---|---|
 
-## 9. Exception Record
+## 9. AI-generated predictions
 
-| exception_type | source_section | reason | approved_by_role | expiry | follow_up | owner | status |
-|---|---|---|---|---|---|---|---|
-| {exception_type} | {source_section} | {reason} | {approved_by_role} | {expiry} | {follow_up} | {owner} | OPEN |
-| {exception_type} | {source_section} | {reason} | {approved_by_role} | {expiry} | {follow_up} | {owner} | CLOSED |
+## 10. Items reviewed by humans
 
-## 10. AI-generated predictions
-
-## 11. Items reviewed by humans
-
-## 12. Final Self-Verdict
+## 11. Final Self-Verdict
 
 - PASS / NEEDS_UPDATE / BLOCKED

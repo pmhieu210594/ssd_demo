@@ -13,13 +13,11 @@ import org.slf4j.MDC;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.OffsetDateTime;
-import java.util.Arrays;
 
 /**
  * The single place where exceptions become HTTP responses.
@@ -66,13 +64,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
-        BindingResult bindingResult = ex.getBindingResult();
-        boolean unsafeInput = bindingResult != null && bindingResult.getAllErrors().stream()
-                .flatMap(e -> Arrays.stream(e.getCodes() != null ? e.getCodes() : new String[0]))
-                .anyMatch("NoXssFields"::equals);
-        if (unsafeInput) {
-            return error(HttpStatus.BAD_REQUEST, "UNSAFE_INPUT", "UNSAFE_INPUT");
-        }
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "VALIDATION_ERROR");
     }
 

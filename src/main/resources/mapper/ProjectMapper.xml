@@ -211,23 +211,6 @@
               AND deleted_at IS NULL
               AND status = 'ACTIVE'
             RETURNING project_team_id
-        ),
-        target_repositories AS (
-            SELECT repository_id
-            FROM tbl_dim_repository
-            WHERE project_id = #{projectId}
-        ),
-        updated_repositories AS (
-            UPDATE tbl_dim_repository
-            SET delete_flag = TRUE,
-                deleted_at = #{deletedAt},
-                deleted_by = #{deletedBy},
-                status = 'DELETED',
-                updated_at = #{updatedAt},
-                updated_by = #{updatedBy}
-            WHERE repository_id IN (SELECT repository_id FROM target_repositories)
-              AND status &lt;&gt; 'DELETED'
-            RETURNING repository_id
         )
         UPDATE tbl_dim_project
         SET status = 'DELETED',

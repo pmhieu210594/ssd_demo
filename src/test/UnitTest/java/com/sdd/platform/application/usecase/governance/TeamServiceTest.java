@@ -44,14 +44,11 @@ class TeamServiceTest {
         @Mock
         private TeamRepositoryPort repository;
 
-        @Mock
-        private AdminAuditLogService adminAuditLogService;
-
         private TeamService service;
 
         @BeforeEach
         void setUp() {
-                service = new TeamService(repository, adminAuditLogService);
+                service = new TeamService(repository);
         }
 
         @Test

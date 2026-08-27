@@ -3,6 +3,7 @@ package com.sdd.platform.web.dto;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreCriterion;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreRequest;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.ScoreResult;
+import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -54,6 +55,7 @@ public final class EvidenceQualityScoreDtos {
     public record EvidenceQualityScoreResponseDto(
             UUID ticketId,
             BigDecimal score,
+            String band,
             List<EvidenceQualityScoreBreakdownItemDto> breakdown,
             List<String> missing,
             List<String> parseErrors,
@@ -66,6 +68,7 @@ public final class EvidenceQualityScoreDtos {
             return new EvidenceQualityScoreResponseDto(
                     result.ticketId(),
                     result.score(),
+                    result.band(),
                     result.breakdown().stream().map(EvidenceQualityScoreBreakdownItemDto::from).toList(),
                     result.missing(),
                     result.parseErrors(),

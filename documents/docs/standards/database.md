@@ -166,24 +166,6 @@ to avoid holding a pool connection during network I/O.
 
 ---
 
-## Append-Only Table Enforcement (Confirmed — ADMIN-AUDIT-LOG 2026-07-10)
-
-For a table that must be immutable after insert (e.g. an audit log), prefer a `BEFORE UPDATE OR DELETE` trigger that raises an exception over a `REVOKE UPDATE, DELETE` grant. `REVOKE`/`GRANT` only works when a distinct, lower-privileged DB role is used for the application connection; this codebase's application connects with a single DB role that owns and must be able to migrate every table, so a role-level `REVOKE` would also block the app itself. A trigger enforces immutability regardless of which role issues the statement.
-
-```sql
-CREATE OR REPLACE FUNCTION fn_<table>_append_only() RETURNS trigger AS $$
-BEGIN
-    RAISE EXCEPTION '<table> is append-only';
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_<table>_append_only
-BEFORE UPDATE OR DELETE ON <table>
-FOR EACH ROW EXECUTE FUNCTION fn_<table>_append_only();
-```
-
----
-
 ## Candidate Rules
 
 > The following require evidence or decisions not yet available.

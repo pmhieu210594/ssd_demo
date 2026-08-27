@@ -2,6 +2,7 @@ package com.sdd.platform.application.usecase.docparse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
+import com.sdd.platform.application.port.out.persistence.AcCoveragePort;
 import com.sdd.platform.application.port.out.persistence.DocParsePersistencePort;
 import com.sdd.platform.application.port.out.persistence.TestEvidencePersistencePort;
 import com.sdd.platform.application.usecase.docparse.DocParseModels.FieldSpec;
@@ -26,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -38,6 +38,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -48,27 +49,39 @@ public class TestPlanParseService {
     public static final String DOCUMENT_TYPE = "TEST_PLAN";
     public static final String DEFAULT_PARSER_NAME = "test-plan-parser";
     public static final String DEFAULT_PARSER_VERSION = "v1";
+    public static final String SCHEMA_VERSION = "TEST_PLAN_V1";
     public static final String SECTION_TYPE = "test-plan";
 
     private static final List<FieldSpec> FIELD_SPECS = List.of(
-            new FieldSpec("ma_tran_bao_phu", "ma-tran-bao-phu", "Ma_trận_bao_phủ",
-                    "Ma_trận_bao_phủ", "Coverage matrix", true, 1),
-            new FieldSpec("unit_test_fe", "unit-test-fe", "Unit_test_FE",
-                    "Unit_test_FE", "Frontend unit test plan", true, 2),
-            new FieldSpec("unit_test_be", "unit-test-be", "Unit_test_BE",
-                    "Unit_test_BE", "Backend unit test plan", true, 3),
-            new FieldSpec("integration_test_api", "integration-test-api", "Integration_test_API",
-                    "Integration_test_API", "API integration test plan", true, 4),
-            new FieldSpec("kiem_thu_e2e_playwright", "kiem-thu-e2e-playwright", "Kiểm_thử_E2E_(Playwright)",
-                    "Kiểm_thử_E2E_(Playwright)", "Playwright end-to-end test plan", true, 5),
-            new FieldSpec("cac_lenh_chay_kiem_thu", "cac-lenh-chay-kiem-thu", "Các_lệnh_chạy_kiểm_thử",
-                    "Các_lệnh_chạy_kiểm_thử", "Commands to execute tests", true, 6),
-            new FieldSpec("ghi_chu_rang_buoc", "ghi-chu-rang-buoc", "Ghi_chú_Ràng_buộc",
-                    "Ghi_chú_Ràng_buộc", "Constraints and notes", true, 7));
+            new FieldSpec("purpose", "purpose", "Purpose",
+                    "1. Purpose", "Test plan purpose", true, 1),
+            new FieldSpec("ac_matrix_test_type", "ac-matrix-test-type", "AC Matrix / Test Type",
+                    "2. AC Matrix ↔ Test Type", "AC to test type mapping", true, 2),
+            new FieldSpec("priority", "priority", "Priority",
+                    "3. Priority", "Test item priorities", true, 3),
+            new FieldSpec("reuse_existing_test", "reuse-existing-test", "Reuse Existing Test",
+                    "4. Reuse Existing Test", "Reusable existing tests", false, 4),
+            new FieldSpec("additional_test_this_time", "additional-test-this-time", "Additional Test This Time",
+                    "5. Additional Test This Time", "New tests added for this ticket", true, 5),
+            new FieldSpec("e2e_step_by_step_scenarios", "e2e-step-by-step-scenarios", "E2E Step-by-step Scenarios",
+                    "E2E Step-by-step Scenarios", "End-to-end scenario steps", true, 6),
+            new FieldSpec("areas_intentionally_left_untested_this_time", "areas-intentionally-left-untested-this-time",
+                    "Areas Intentionally Left Untested This Time",
+                    "6. Areas intentionally left untested this time", "Untested areas and justification", false, 7),
+            new FieldSpec("data_testing_principles", "data-testing-principles", "Data Testing Principles",
+                    "7. Data testing principles", "Data usage rules for tests", true, 8),
+            new FieldSpec("execution_command", "execution-command", "Execution Command",
+                    "8. Execution command", "Commands to run the tests", true, 9),
+            new FieldSpec("stop_condition", "stop-condition", "Stop Condition",
+                    "9. Stop Condition", "Conditions that halt testing", true, 10),
+            new FieldSpec("required_human_decision", "required-human-decision", "Required Human Decision",
+                    "10. Required Human Decision", "Decisions needing human confirmation", false, 11));
 
     private final ArtifactNormalizer artifactNormalizer;
     private final DocParsePersistencePort persistence;
     private final ObjectMapper objectMapper;
+    private final TestCoverageValidationService coverageValidationService;
+    private final AcCoveragePort acCoveragePort;
     private final TestEvidencePersistencePort testEvidencePersistencePort;
     private final CiRunRepositoryPort ciRunRepositoryPort;
     private final EvidenceQualityScoreService evidenceQualityScoreService;
@@ -78,12 +91,16 @@ public class TestPlanParseService {
             ArtifactNormalizer artifactNormalizer,
             @Qualifier("testPlanDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             TestEvidencePersistencePort testEvidencePersistencePort,
             CiRunRepositoryPort ciRunRepositoryPort,
             EvidenceQualityScoreService evidenceQualityScoreService) {
         this.artifactNormalizer = artifactNormalizer;
         this.persistence = persistence;
         this.objectMapper = objectMapper;
+        this.coverageValidationService = coverageValidationService;
+        this.acCoveragePort = acCoveragePort;
         this.testEvidencePersistencePort = testEvidencePersistencePort;
         this.ciRunRepositoryPort = ciRunRepositoryPort;
         this.evidenceQualityScoreService = evidenceQualityScoreService;
@@ -93,17 +110,22 @@ public class TestPlanParseService {
             ArtifactNormalizer artifactNormalizer,
             @Qualifier("testPlanDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             CiRunRepositoryPort ciRunRepositoryPort) {
-        this(artifactNormalizer, persistence, objectMapper, null, ciRunRepositoryPort, null);
+        this(artifactNormalizer, persistence, objectMapper, coverageValidationService, acCoveragePort, null, ciRunRepositoryPort, null);
     }
 
     public TestPlanParseService(
             ArtifactNormalizer artifactNormalizer,
             @Qualifier("testPlanDocParse") DocParsePersistencePort persistence,
             ObjectMapper objectMapper,
+            TestCoverageValidationService coverageValidationService,
+            AcCoveragePort acCoveragePort,
             TestEvidencePersistencePort testEvidencePersistencePort,
             CiRunRepositoryPort ciRunRepositoryPort) {
-        this(artifactNormalizer, persistence, objectMapper, testEvidencePersistencePort, ciRunRepositoryPort, null);
+        this(artifactNormalizer, persistence, objectMapper, coverageValidationService, acCoveragePort,
+                testEvidencePersistencePort, ciRunRepositoryPort, null);
     }
 
     private static final List<Pattern> PLACEHOLDER_PATTERNS = List.of(
@@ -118,13 +140,28 @@ public class TestPlanParseService {
                 request.repositoryId(), request.ticketId(), request.parseMode(),
                 request.sourcePath(), request.traceId());
         ParseResult parsed = parse(request);
+        List<String> specPackAcKeys = acCoveragePort.findActiveAcKeys(request.ticketId());
+        if (!specPackAcKeys.isEmpty()) {
+            List<String> matrixAcIds = extractAcIds(parsed.fieldValues().get("ac_matrix_test_type"));
+            List<String> coverageWarnings = coverageValidationService.validateCoverage(specPackAcKeys, matrixAcIds);
+            if (!coverageWarnings.isEmpty()) {
+                List<String> mergedWarnings = new ArrayList<>(parsed.warnings());
+                mergedWarnings.addAll(coverageWarnings);
+                ParseStatus newStatus = parsed.parseStatus() == ParseStatus.SUCCESS
+                        ? ParseStatus.PARTIAL : parsed.parseStatus();
+                parsed = new ParseResult(null, parsed.fields(), newStatus, parsed.missingFields(),
+                        mergedWarnings, parsed.sourceHash(), parsed.fieldValues());
+            }
+        }
         ParseSnapshot snapshot = persistence.upsertSnapshot(buildSnapshot(request, parsed));
         List<ParseField> sections = buildSections(snapshot.artifactSnapshotId(), request.ticketId(), parsed);
         persistence.replaceSections(snapshot.artifactSnapshotId(), request.ticketId(), sections);
         persistPlannedCoverage(snapshot.artifactSnapshotId(), request.ticketId(), parsed);
         persistence.persistEvidenceEvent(buildEvidenceEvent(request, snapshot, parsed));
         ParseDataQuality quality = buildDataQuality(request, snapshot, parsed);
-        persistence.persistDataQuality(quality);
+        if (quality.missingCount() > 0 || quality.parseErrorCount() > 0 || quality.schemaViolationCount() > 0) {
+            persistence.persistDataQuality(quality);
+        }
         if (evidenceQualityScoreService != null && request.ticketId() != null) {
             evidenceQualityScoreService.recalculateFromParser(request.ticketId(), null, request.traceId());
         }
@@ -244,17 +281,14 @@ public class TestPlanParseService {
 
     private ParseSnapshot buildSnapshot(ParseRequest request, ParseResult parsed) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        ParseSnapshot previousSnapshot = persistence.findLatestSnapshot(request.ticketId(), DOCUMENT_TYPE,
-                request.parseMode()).orElse(null);
-        Integer schemaVersion = resolveSchemaVersion(previousSnapshot, parsed.sourceHash());
         return new ParseSnapshot(null, request.ticketId(), request.repositoryId(),
                 null, null, DOCUMENT_TYPE, "Test Plan",
                 request.parseMode().name(), parsed.parseStatus().name(),
-                request.sourcePath(), parsed.sourceHash(), schemaVersion,
+                request.sourcePath(), parsed.sourceHash(), SCHEMA_VERSION,
                 parsed.parseStatus() == ParseStatus.SUCCESS,
                 request.sourceText() != null && request.sourceText().isBlank(),
                 parsed.missingFields(), buildParsedSummaryJson(request, parsed),
-                request.parserVersion(), request.connectorRunId(), request.sourceUpdatedAt(), now);
+                request.parserVersion(), now);
     }
 
     private List<ParseField> buildSections(UUID snapshotId, UUID ticketId, ParseResult parsed) {
@@ -352,34 +386,28 @@ public class TestPlanParseService {
                 .filter(key -> FIELD_SPECS.stream().filter(FieldSpec::required).anyMatch(s -> s.fieldKey().equals(key)))
                 .count();
         int parseErrorCount = parsed.parseStatus() == ParseStatus.PARSE_ERROR ? 1 : 0;
+        List<String> coverageViolations = parsed.warnings().stream()
+                .filter(w -> w.startsWith("AC_NOT_COVERED:") || w.startsWith("UNKNOWN_AC_REFERENCE:"))
+                .toList();
         int schemaViolationCount = (int) parsed.warnings().stream()
                 .filter(w -> w.contains(":duplicate") || w.contains(":invalid_order"))
-                .count();
+                .count() + coverageViolations.size();
         List<String> errorParts = new ArrayList<>();
         if (parseErrorCount > 0) errorParts.add("parse_error");
         errorParts.addAll(parsed.missingFields());
+        errorParts.addAll(coverageViolations);
         String errorSummary = errorParts.isEmpty() ? null : String.join("; ", errorParts);
         return new ParseDataQuality(
                 request.projectId(),
                 request.repositoryId(),
-                request.connectorRunId(),
                 DOCUMENT_TYPE + "_PARSE",
                 snapshot.sourcePath(),
                 missingCount,
                 parseErrorCount,
                 schemaViolationCount,
-                calculateFreshnessDelayMinutes(snapshot.sourceUpdatedAt()),
                 errorSummary,
                 OffsetDateTime.now(ZoneOffset.UTC)
         );
-    }
-
-    private Integer calculateFreshnessDelayMinutes(OffsetDateTime sourceUpdatedAt) {
-        if (sourceUpdatedAt == null) {
-            return null;
-        }
-        long minutes = Duration.between(sourceUpdatedAt, OffsetDateTime.now(ZoneOffset.UTC)).toMinutes();
-        return (int) Math.max(minutes, 0L);
     }
 
     private String toJson(Object value) {
@@ -396,9 +424,6 @@ public class TestPlanParseService {
         summary.put("parseMode", request.parseMode().name());
         summary.put("parseStatus", parsed.parseStatus().name());
         summary.put("sourceHash", parsed.sourceHash());
-        summary.put("schemaVersion", resolveSchemaVersion(
-                persistence.findLatestSnapshot(request.ticketId(), DOCUMENT_TYPE, request.parseMode()).orElse(null),
-                parsed.sourceHash()));
         summary.put("parserName", request.parserName());
         summary.put("parserVersion", request.parserVersion());
         summary.put("traceId", request.traceId());
@@ -417,19 +442,6 @@ public class TestPlanParseService {
         }
     }
 
-    private Integer resolveSchemaVersion(ParseSnapshot previousSnapshot, String sourceHash) {
-        if (sourceHash == null || sourceHash.isBlank()) {
-            return null;
-        }
-        if (previousSnapshot == null || previousSnapshot.schemaVersion() == null) {
-            return 1;
-        }
-        if (sourceHash.equals(previousSnapshot.contentHash())) {
-            return previousSnapshot.schemaVersion();
-        }
-        return previousSnapshot.schemaVersion() + 1;
-    }
-
     private Optional<CiRunMetadataView> resolveCiRunMetadata(ParseRequest request) {
         if (request == null || request.repositoryId() == null || request.ticketId() == null) {
             return Optional.empty();
@@ -445,9 +457,9 @@ public class TestPlanParseService {
         target.put("ciRunId", view.ciRunId());
         target.put("ciProvider", view.ciProvider());
         target.put("workflowName", view.workflowName());
-        target.put("jobName", null);
+        target.put("jobName", view.jobName());
         target.put("externalRunId", view.externalRunId());
-        target.put("externalJobId", null);
+        target.put("externalJobId", view.externalJobId());
         target.put("ciUrl", view.ciUrl());
         target.put("ciStatus", view.status());
         target.put("ciCollectedAt", view.collectedAt());
@@ -528,6 +540,27 @@ public class TestPlanParseService {
         }
 
         return warnings;
+    }
+
+    private List<String> extractAcIds(String text) {
+
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+
+        Pattern pattern = Pattern.compile("\\bAC-[A-Za-z0-9_-]+\\b");
+
+        Matcher matcher = pattern.matcher(text);
+
+        List<String> ids = new ArrayList<>();
+
+        while (matcher.find()) {
+            ids.add(matcher.group());
+        }
+
+        return ids.stream()
+                .distinct()
+                .toList();
     }
 
     private void persistPlannedCoverage(UUID snapshotId, UUID ticketId, ParseResult parsed) {

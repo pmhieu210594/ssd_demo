@@ -26,8 +26,7 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
     private final ObjectMapper objectMapper;
     private final String artifactTypeCode;
 
-    public GenericDocParseJdbcAdapter(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper,
-            String artifactTypeCode) {
+    public GenericDocParseJdbcAdapter(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper, String artifactTypeCode) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.artifactTypeCode = artifactTypeCode;
@@ -39,22 +38,20 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
         String parsedSummaryJson = snapshot.parsedSummaryJson() == null || snapshot.parsedSummaryJson().isBlank()
                 ? "{}"
                 : snapshot.parsedSummaryJson();
-        List<String> missingFields = snapshot.requiredFieldsMissing() == null ? List.of()
-                : snapshot.requiredFieldsMissing();
+        List<String> missingFields = snapshot.requiredFieldsMissing() == null ? List.of() : snapshot.requiredFieldsMissing();
 
         UUID id = jdbc.queryForObject("""
                 INSERT INTO tbl_fact_artifact_snapshot (
                     ticket_id, repository_id, artifact_type_id, phase_id, source_path, source_url_hash,
                     exists_flag, content_hash, schema_version, schema_valid, template_empty_flag,
                     required_fields_missing, parsed_summary, parser_version,
-                    source_updated_at, collected_at, connector_run_id,
-                    created_at, created_by, updated_at, updated_by
+                    collected_at, created_at, created_by, updated_at, updated_by
                 )
                 VALUES (
                     :ticketId, :repositoryId, :artifactTypeId, :phaseId, :sourcePath, :sourceUrlHash,
                     :existsFlag, :contentHash, :schemaVersion, :schemaValid, :templateEmptyFlag,
                     CAST(:requiredFieldsMissing AS jsonb), CAST(:parsedSummary AS jsonb), :parserVersion,
-                    :sourceUpdatedAt, :collectedAt, :connectorRunId, now(), :actor, now(), :actor
+                    :collectedAt, now(), :actor, now(), :actor
                 )
                 ON CONFLICT ON CONSTRAINT uq_artifact_snapshot DO UPDATE
                 SET ticket_id = EXCLUDED.ticket_id,
@@ -69,9 +66,7 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                     required_fields_missing = EXCLUDED.required_fields_missing,
                     parsed_summary = EXCLUDED.parsed_summary,
                     parser_version = EXCLUDED.parser_version,
-                    source_updated_at = EXCLUDED.source_updated_at,
                     collected_at = EXCLUDED.collected_at,
-                    connector_run_id = EXCLUDED.connector_run_id,
                     updated_at = now(),
                     updated_by = EXCLUDED.updated_by
                 RETURNING artifact_snapshot_id
@@ -91,9 +86,7 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                         .addValue("requiredFieldsMissing", toJson(missingFields))
                         .addValue("parsedSummary", parsedSummaryJson)
                         .addValue("parserVersion", snapshot.parserVersion())
-                        .addValue("sourceUpdatedAt", snapshot.sourceUpdatedAt())
                         .addValue("collectedAt", snapshot.collectedAt())
-                        .addValue("connectorRunId", snapshot.connectorRunId())
                         .addValue("actor", SYSTEM_ACTOR),
                 UUID.class);
         return new ParseSnapshot(
@@ -114,25 +107,17 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                 missingFields,
                 parsedSummaryJson,
                 snapshot.parserVersion(),
-                snapshot.connectorRunId(),
-                snapshot.sourceUpdatedAt(),
-                snapshot.collectedAt());
+                snapshot.collectedAt()
+        );
     }
 
     @Override
     public void replaceSections(UUID snapshotId, UUID ticketId, List<ParseField> sections) {
-        if (sections == null || sections.isEmpty()) {
-            return;
-        }
-        String sectionType = sections.get(0).sectionType();
         jdbc.update("""
                 DELETE FROM tbl_fact_artifact_parsed_section
-                WHERE ticket_id = :ticketId
-                  AND section_type = :sectionType
+                WHERE artifact_snapshot_id = :snapshotId
                 """,
-                new MapSqlParameterSource()
-                        .addValue("ticketId", ticketId)
-                        .addValue("sectionType", sectionType));
+                new MapSqlParameterSource("snapshotId", snapshotId));
         for (ParseField section : sections) {
             jdbc.update("""
                     INSERT INTO tbl_fact_artifact_parsed_section (
@@ -164,64 +149,64 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
     @Override
     public Optional<ParseSnapshot> findLatestSnapshot(UUID ticketId, String typeCode, ParseMode parseMode) {
         return jdbc.query("""
-                SELECT s.artifact_snapshot_id,
-                       s.ticket_id,
-                       s.repository_id,
-                       s.artifact_type_id,
-                       s.phase_id,
-                        t.artifact_type_code,
-                        t.artifact_name,
-                         s.source_path,
-                        s.content_hash,
-                        s.schema_version,
-                        s.schema_valid,
-                        s.template_empty_flag,
-                        s.required_fields_missing,
-                        s.parsed_summary,
-                        s.parser_version,
-                        s.source_updated_at,
-                        s.connector_run_id,
-                        s.collected_at
-                FROM tbl_fact_artifact_snapshot s
-                JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
-                WHERE s.ticket_id = :ticketId
-                  AND t.artifact_type_code = :artifactTypeCode
-                ORDER BY s.collected_at DESC, s.artifact_snapshot_id DESC
-                """,
+                        SELECT s.artifact_snapshot_id,
+                               s.ticket_id,
+                               s.repository_id,
+                               s.artifact_type_id,
+                               s.phase_id,
+                               t.artifact_type_code,
+                               t.artifact_name,
+                               COALESCE(s.parsed_summary ->> 'parseMode', :parseMode) AS parse_mode,
+                               COALESCE(s.parsed_summary ->> 'parseStatus', 'PARSE_ERROR') AS parse_status,
+                               s.source_path,
+                               s.content_hash,
+                               s.schema_version,
+                               s.schema_valid,
+                               s.template_empty_flag,
+                               s.required_fields_missing,
+                               s.parsed_summary,
+                               s.parser_version,
+                               s.collected_at
+                        FROM tbl_fact_artifact_snapshot s
+                        JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
+                        WHERE s.ticket_id = :ticketId
+                          AND t.artifact_type_code = :artifactTypeCode
+                          AND COALESCE(s.parsed_summary ->> 'parseMode', :parseMode) = :parseMode
+                        ORDER BY s.collected_at DESC, s.artifact_snapshot_id DESC
+                        LIMIT 1
+                        """,
                 new MapSqlParameterSource()
                         .addValue("ticketId", ticketId)
                         .addValue("artifactTypeCode", typeCode)
                         .addValue("parseMode", parseMode.name()),
-                this::mapSnapshot).stream()
-                .filter(snapshot -> parseMode.name().equalsIgnoreCase(snapshot.parseMode()))
-                .findFirst();
+                this::mapSnapshot).stream().findFirst();
     }
 
     @Override
     public Optional<ParseSnapshot> findSnapshotById(UUID snapshotId) {
         return jdbc.query("""
-                SELECT s.artifact_snapshot_id,
-                       s.ticket_id,
-                       s.repository_id,
-                       s.artifact_type_id,
-                       s.phase_id,
-                        t.artifact_type_code,
-                        t.artifact_name,
-                         s.source_path,
-                        s.content_hash,
-                        s.schema_version,
-                        s.schema_valid,
-                        s.template_empty_flag,
-                        s.required_fields_missing,
-                        s.parsed_summary,
-                        s.parser_version,
-                        s.source_updated_at,
-                        s.connector_run_id,
-                        s.collected_at
-                FROM tbl_fact_artifact_snapshot s
-                JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
-                WHERE s.artifact_snapshot_id = :snapshotId
-                """,
+                        SELECT s.artifact_snapshot_id,
+                               s.ticket_id,
+                               s.repository_id,
+                               s.artifact_type_id,
+                               s.phase_id,
+                               t.artifact_type_code,
+                               t.artifact_name,
+                               COALESCE(s.parsed_summary ->> 'parseMode', 'DRAFT') AS parse_mode,
+                               COALESCE(s.parsed_summary ->> 'parseStatus', 'PARSE_ERROR') AS parse_status,
+                               s.source_path,
+                               s.content_hash,
+                               s.schema_version,
+                               s.schema_valid,
+                               s.template_empty_flag,
+                               s.required_fields_missing,
+                               s.parsed_summary,
+                               s.parser_version,
+                               s.collected_at
+                        FROM tbl_fact_artifact_snapshot s
+                        JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
+                        WHERE s.artifact_snapshot_id = :snapshotId
+                        """,
                 new MapSqlParameterSource("snapshotId", snapshotId),
                 this::mapSnapshot).stream().findFirst();
     }
@@ -229,21 +214,21 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
     @Override
     public List<ParseField> findSections(UUID snapshotId) {
         return jdbc.query("""
-                SELECT parsed_section_id,
-                       artifact_snapshot_id,
-                       ticket_id,
-                       section_type,
-                       section_key,
-                       section_text_hash,
-                       section_summary,
-                       required_flag,
-                       present_flag,
-                       valid_flag,
-                       parse_warning
-                FROM tbl_fact_artifact_parsed_section
-                WHERE artifact_snapshot_id = :snapshotId
-                ORDER BY section_key ASC, parsed_section_id ASC
-                """,
+                        SELECT parsed_section_id,
+                               artifact_snapshot_id,
+                               ticket_id,
+                               section_type,
+                               section_key,
+                               section_text_hash,
+                               section_summary,
+                               required_flag,
+                               present_flag,
+                               valid_flag,
+                               parse_warning
+                        FROM tbl_fact_artifact_parsed_section
+                        WHERE artifact_snapshot_id = :snapshotId
+                        ORDER BY section_key ASC, parsed_section_id ASC
+                        """,
                 new MapSqlParameterSource("snapshotId", snapshotId),
                 (rs, rowNum) -> new ParseField(
                         rs.getObject("parsed_section_id", UUID.class),
@@ -263,39 +248,38 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
     public List<ParseSnapshot> findSnapshots(UUID ticketId, String typeCode, ParseMode parseMode, int limit) {
         int safeLimit = Math.max(Math.min(limit, 100), 1);
         return jdbc.query("""
-                SELECT s.artifact_snapshot_id,
-                       s.ticket_id,
-                       s.repository_id,
-                       s.artifact_type_id,
-                       s.phase_id,
-                        t.artifact_type_code,
-                        t.artifact_name,
-                         s.source_path,
-                        s.content_hash,
-                        s.schema_version,
-                        s.schema_valid,
-                        s.template_empty_flag,
-                        s.required_fields_missing,
-                        s.parsed_summary,
-                        s.parser_version,
-                        s.source_updated_at,
-                        s.connector_run_id,
-                        s.collected_at
-                FROM tbl_fact_artifact_snapshot s
-                JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
-                WHERE s.ticket_id = :ticketId
-                  AND t.artifact_type_code = :artifactTypeCode
-                ORDER BY s.collected_at DESC, s.artifact_snapshot_id DESC
-                """,
+                        SELECT s.artifact_snapshot_id,
+                               s.ticket_id,
+                               s.repository_id,
+                               s.artifact_type_id,
+                               s.phase_id,
+                               t.artifact_type_code,
+                               t.artifact_name,
+                               COALESCE(s.parsed_summary ->> 'parseMode', :parseMode) AS parse_mode,
+                               COALESCE(s.parsed_summary ->> 'parseStatus', 'PARSE_ERROR') AS parse_status,
+                               s.source_path,
+                               s.content_hash,
+                               s.schema_version,
+                               s.schema_valid,
+                               s.template_empty_flag,
+                               s.required_fields_missing,
+                               s.parsed_summary,
+                               s.parser_version,
+                               s.collected_at
+                        FROM tbl_fact_artifact_snapshot s
+                        JOIN tbl_dim_artifact_type t ON t.artifact_type_id = s.artifact_type_id
+                        WHERE s.ticket_id = :ticketId
+                          AND t.artifact_type_code = :artifactTypeCode
+                          AND COALESCE(s.parsed_summary ->> 'parseMode', :parseMode) = :parseMode
+                        ORDER BY s.collected_at DESC, s.artifact_snapshot_id DESC
+                        LIMIT :limit
+                        """,
                 new MapSqlParameterSource()
                         .addValue("ticketId", ticketId)
                         .addValue("artifactTypeCode", typeCode)
                         .addValue("parseMode", parseMode.name())
                         .addValue("limit", safeLimit),
-                this::mapSnapshot).stream()
-                .filter(snapshot -> parseMode.name().equalsIgnoreCase(snapshot.parseMode()))
-                .limit(safeLimit)
-                .toList();
+                this::mapSnapshot);
     }
 
     @Override
@@ -332,45 +316,32 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
     public void persistDataQuality(ParseDataQuality quality) {
         jdbc.update("""
                 INSERT INTO tbl_fact_data_quality (
-                    project_id, repository_id, connector_run_id, source_type, source_ref,
-                    missing_count, parse_error_count, schema_violation_count, freshness_delay_minutes,
+                    project_id, repository_id, source_type, source_ref,
+                    missing_count, parse_error_count, schema_violation_count,
                     error_summary, checked_at,
                     created_at, created_by, updated_at, updated_by
                 )
                 VALUES (
-                    :projectId, :repositoryId, :connectorRunId, :sourceType, :sourceRef,
-                    :missingCount, :parseErrorCount, :schemaViolationCount, :freshnessDelayMinutes,
+                    :projectId, :repositoryId, :sourceType, :sourceRef,
+                    :missingCount, :parseErrorCount, :schemaViolationCount,
                     :errorSummary, :checkedAt,
                     now(), :actor, now(), :actor
                 )
-                    ON CONFLICT ON CONSTRAINT unique_tbl_fact_data_quality DO UPDATE 
-                SET
-                    connector_run_id = EXCLUDED.connector_run_id
-                    , missing_count = EXCLUDED.missing_count
-                    , parse_error_count = EXCLUDED.parse_error_count
-                    , schema_violation_count = EXCLUDED.schema_violation_count
-                    , freshness_delay_minutes = EXCLUDED.freshness_delay_minutes
-                    , error_summary = EXCLUDED.error_summary
-                    , updated_at = now()
-                    , checked_at = EXCLUDED.checkedAt
                 """,
                 new MapSqlParameterSource()
                         .addValue("projectId", quality.projectId())
                         .addValue("repositoryId", quality.repositoryId())
-                        .addValue("connectorRunId", quality.connectorRunId())
                         .addValue("sourceType", quality.sourceType())
                         .addValue("sourceRef", quality.sourceRef())
                         .addValue("missingCount", quality.missingCount())
                         .addValue("parseErrorCount", quality.parseErrorCount())
                         .addValue("schemaViolationCount", quality.schemaViolationCount())
-                        .addValue("freshnessDelayMinutes", quality.freshnessDelayMinutes())
                         .addValue("errorSummary", quality.errorSummary())
                         .addValue("checkedAt", quality.checkedAt())
                         .addValue("actor", SYSTEM_ACTOR));
     }
 
     private ParseSnapshot mapSnapshot(ResultSet rs, int rowNum) throws SQLException {
-        String parsedSummaryJson = rs.getString("parsed_summary");
         return new ParseSnapshot(
                 rs.getObject("artifact_snapshot_id", UUID.class),
                 rs.getObject("ticket_id", UUID.class),
@@ -379,27 +350,26 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                 rs.getObject("phase_id", UUID.class),
                 rs.getString("artifact_type_code"),
                 rs.getString("artifact_name"),
-                parseJsonValue(parsedSummaryJson, "parseMode", "DRAFT"),
-                parseJsonValue(parsedSummaryJson, "parseStatus", "PARSE_ERROR"),
+                rs.getString("parse_mode"),
+                rs.getString("parse_status"),
                 rs.getString("source_path"),
                 rs.getString("content_hash"),
-                rs.getObject("schema_version", Integer.class),
+                rs.getString("schema_version"),
                 rs.getObject("schema_valid", Boolean.class),
                 rs.getObject("template_empty_flag", Boolean.class),
                 readStringList(rs.getString("required_fields_missing")),
-                parsedSummaryJson,
+                rs.getString("parsed_summary"),
                 rs.getString("parser_version"),
-                rs.getObject("connector_run_id", UUID.class),
-                rs.getObject("source_updated_at", OffsetDateTime.class),
-                rs.getObject("collected_at", OffsetDateTime.class));
+                rs.getObject("collected_at", OffsetDateTime.class)
+        );
     }
 
     private ArtifactTypeLookup lookupArtifactType() {
         return jdbc.queryForObject("""
-                SELECT artifact_type_id, phase_id, artifact_type_code, artifact_name
-                FROM tbl_dim_artifact_type
-                WHERE artifact_type_code = :artifactTypeCode
-                """,
+                        SELECT artifact_type_id, phase_id, artifact_type_code, artifact_name
+                        FROM tbl_dim_artifact_type
+                        WHERE artifact_type_code = :artifactTypeCode
+                        """,
                 new MapSqlParameterSource("artifactTypeCode", artifactTypeCode),
                 (rs, rowNum) -> new ArtifactTypeLookup(
                         rs.getObject("artifact_type_id", UUID.class),
@@ -421,21 +391,9 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {
-            });
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
         } catch (Exception ex) {
             return List.of();
-        }
-    }
-
-    private String parseJsonValue(String json, String fieldName, String fallback) {
-        if (json == null || json.isBlank()) {
-            return fallback;
-        }
-        try {
-            return objectMapper.readTree(json).path(fieldName).asText(fallback);
-        } catch (Exception ex) {
-            return fallback;
         }
     }
 
@@ -443,6 +401,6 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
             UUID artifactTypeId,
             UUID phaseId,
             String artifactTypeCode,
-            String artifactName) {
-    }
+            String artifactName
+    ) {}
 }

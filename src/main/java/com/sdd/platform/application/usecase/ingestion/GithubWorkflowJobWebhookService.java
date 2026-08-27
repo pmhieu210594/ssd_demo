@@ -6,7 +6,6 @@ import com.sdd.platform.application.port.out.persistence.CiRunRepositoryPort;
 import com.sdd.platform.application.port.out.persistence.EvidenceRepositoryPort;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreService;
 import com.sdd.platform.config.AppProperties;
-import com.sdd.platform.domain.model.CiJob;
 import com.sdd.platform.domain.model.CiRun;
 import com.sdd.platform.domain.model.ConnectorRun;
 import org.slf4j.Logger;
@@ -231,12 +230,12 @@ public class GithubWorkflowJobWebhookService {
             }
         }
 
-        boolean ciRunExisted = ciRunRepositoryPort.findCiRunIdByIdentity(CI_PROVIDER, repository.getRepositoryId(), workflowRunId)
-                .isPresent();
+        UUID existingCiRunId = ciRunRepositoryPort.findCiRunIdByIdentity(CI_PROVIDER, repository.getRepositoryId(), workflowRunId, externalJobId)
+                .orElse(null);
+        boolean existing = existingCiRunId != null;
 
-        // Phase 1: UPSERT workflow run (1 row per external_run_id)
-        CiRun ciRunRow = CiRun.builder()
-                .id(null)
+        CiRun row = CiRun.builder()
+                .id(existingCiRunId)
                 .projectId(repository.getProjectId())
                 .repositoryId(repository.getRepositoryId())
                 .ticketId(ticketId)
@@ -244,31 +243,22 @@ public class GithubWorkflowJobWebhookService {
                 .connectorRunId(connectorRun.getId())
                 .ciProvider(CI_PROVIDER)
                 .externalRunId(workflowRunId)
+                .externalJobId(externalJobId)
                 .workflowName(workflowName)
-                .status("IN_PROGRESS")
+                .jobName(jobName)
+                .status(status)
                 .startedAt(startedAt)
-                .completedAt(null)
+                .completedAt(completedAt)
                 .ciUrl(ciUrl)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        CiRun savedRun = ciRunRepositoryPort.insertCiRun(ciRunRow);
-        UUID ciRunId = savedRun.getId();
 
-        // Phase 2: UPSERT individual job record
-        CiJob ciJob = CiJob.builder()
-                .ciRunId(ciRunId)
-                .externalJobId(externalJobId)
-                .jobName(jobName)
-                .status(status)
-                .startedAt(startedAt)
-                .finishedAt(completedAt)
-                .build();
-        ciRunRepositoryPort.upsertCiJob(ciJob);
-
-        // Phase 3: Recompute aggregate run status from all jobs
-        String aggregateStatus = ciRunRepositoryPort.computeAggregateRunStatus(ciRunId);
-        ciRunRepositoryPort.updateCiRunStatus(ciRunId, aggregateStatus);
+        if (existing) {
+            ciRunRepositoryPort.updateCiRun(row);
+        } else {
+            ciRunRepositoryPort.insertCiRun(row);
+        }
 
         if (evidenceQualityScoreService != null && ticketId != null && isWorkflowJobCompleted(status, completedAt)) {
             log.info("GitHub workflow_job delivery={} triggering evidence quality score recalculation ticketId={} status={}",
@@ -300,8 +290,8 @@ public class GithubWorkflowJobWebhookService {
         connectorRun.setStatus(ConnectorRun.Status.SUCCESS);
         connectorRun.setFinishedAt(now);
         connectorRun.setRecordsReceived(1);
-        connectorRun.setRecordsInserted(ciRunExisted ? 0 : 1);
-        connectorRun.setRecordsUpdated(ciRunExisted ? 1 : 0);
+        connectorRun.setRecordsInserted(existing ? 0 : 1);
+        connectorRun.setRecordsUpdated(existing ? 1 : 0);
         connectorRun.setRecordsSkipped(0);
         connectorRun.setRecordsError(0);
         ciRunRepositoryPort.updateConnectorRun(connectorRun);

@@ -41,7 +41,7 @@ class UserAccountAdminServicePhase6Test {
     @BeforeEach
     void setUp() {
         repository = Mockito.mock(UserAccountAdminRepositoryPort.class);
-        service = new UserAccountAdminService(repository, Mockito.mock(AdminAuditLogService.class));
+        service = new UserAccountAdminService(repository);
         admin = AppUser.builder()
                 .provider("internal")
                 .providerUid("admin")

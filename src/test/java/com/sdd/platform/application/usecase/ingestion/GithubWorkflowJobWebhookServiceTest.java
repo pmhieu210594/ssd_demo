@@ -69,6 +69,7 @@ class GithubWorkflowJobWebhookServiceTest {
             return run;
         });
     }
+
     @Test
     void handle_inserts_new_ci_run_and_records_optional_linkages() {
         EvidenceRepository repository = repository();
@@ -76,7 +77,7 @@ class GithubWorkflowJobWebhookServiceTest {
                 .thenReturn(Optional.of(repository));
         when(ciRunRepositoryPort.findPullRequestByRepositoryAndExternalNumber(REPOSITORY_ID, 42))
                 .thenReturn(Optional.of(new CiRunModels.PullRequestScope(PULL_REQUEST_ID, TICKET_ID, 42, "feature/PROJ-123-add-ci")));
-        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", REPOSITORY_ID, "27660577827"))
+        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", REPOSITORY_ID, "27660577827", "77123456789"))
                 .thenReturn(Optional.empty());
         when(ciRunRepositoryPort.insertCiRun(any())).thenAnswer(invocation -> {
             CiRun row = invocation.getArgument(0);
@@ -101,10 +102,13 @@ class GithubWorkflowJobWebhookServiceTest {
         assertEquals(CONNECTOR_RUN_ID, row.getConnectorRunId());
         assertEquals("GITHUB_ACTIONS", row.getCiProvider());
         assertEquals("27660577827", row.getExternalRunId());
+        assertEquals("77123456789", row.getExternalJobId());
         assertEquals("CI", row.getWorkflowName());
-        assertEquals("IN_PROGRESS", row.getStatus());
+        assertEquals("build", row.getJobName());
+        assertEquals("SUCCESS", row.getStatus());
         assertEquals("https://github.com/acme/widget/actions/runs/27660577827/job/77123456789", row.getCiUrl());
         assertEquals(OffsetDateTime.parse("2026-06-17T02:00:00Z"), row.getStartedAt());
+        assertEquals(OffsetDateTime.parse("2026-06-17T02:05:00Z"), row.getCompletedAt());
         verify(githubSecurityEvidenceSnapshotService).collectFromWorkflowJob(
                 eq("acme/widget"),
                 eq("feature/PROJ-123-add-ci"),
@@ -139,7 +143,7 @@ class GithubWorkflowJobWebhookServiceTest {
                 .thenReturn(Optional.of("PARSER-SPEC-PACK"));
         when(ciRunRepositoryPort.findTicketIdByProjectIdAndExternalKey(PROJECT_ID, "PARSER-SPEC-PACK"))
                 .thenReturn(Optional.of(TICKET_ID));
-        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", REPOSITORY_ID, "27660577827"))
+        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", REPOSITORY_ID, "27660577827", "77123456789"))
                 .thenReturn(Optional.empty());
         when(ciRunRepositoryPort.insertCiRun(any())).thenAnswer(invocation -> {
             CiRun row = invocation.getArgument(0);
@@ -160,6 +164,38 @@ class GithubWorkflowJobWebhookServiceTest {
         assertEquals(PULL_REQUEST_ID, row.getPullRequestId());
         assertEquals(TICKET_ID, row.getTicketId());
         verify(evidenceQualityScoreService).recalculateFromCi(TICKET_ID, null, "delivery-1");
+    }
+
+    @Test
+    void handle_updates_existing_ci_run_and_normalizes_time_order() {
+        EvidenceRepository repository = repository();
+        when(repositoryPort.findByRepositoryNameMaskedAndHostType("acme/widget", "GITHUB"))
+                .thenReturn(Optional.of(repository));
+        when(ciRunRepositoryPort.findPullRequestByRepositoryAndExternalNumber(REPOSITORY_ID, 42))
+                .thenReturn(Optional.of(new CiRunModels.PullRequestScope(PULL_REQUEST_ID, TICKET_ID, 42, "feature/PROJ-123-add-ci")));
+        when(ciRunRepositoryPort.findCiRunIdByIdentity("GITHUB_ACTIONS", REPOSITORY_ID, "27660577827", "77123456789"))
+                .thenReturn(Optional.of(EXISTING_CI_RUN_ID));
+
+        var result = service.handle(bodyWithReversedTime().getBytes(StandardCharsets.UTF_8), signature(bodyWithReversedTime()), "workflow_job", "delivery-2");
+
+        assertEquals("workflow_job", result.handled());
+        assertEquals(1, result.recordsAffected());
+
+        ArgumentCaptor<CiRun> rowCaptor = ArgumentCaptor.forClass(CiRun.class);
+        verify(ciRunRepositoryPort).updateCiRun(rowCaptor.capture());
+        CiRun row = rowCaptor.getValue();
+        assertEquals(EXISTING_CI_RUN_ID, row.getId());
+        assertEquals(OffsetDateTime.parse("2026-06-17T03:00:00Z"), row.getStartedAt());
+        assertEquals(OffsetDateTime.parse("2026-06-17T03:00:00Z"), row.getCompletedAt());
+        assertEquals("https://github.com/acme/widget/actions/runs/27660577827", row.getCiUrl());
+
+        ArgumentCaptor<ConnectorRun> connectorCaptor = ArgumentCaptor.forClass(ConnectorRun.class);
+        verify(ciRunRepositoryPort).updateConnectorRun(connectorCaptor.capture());
+        ConnectorRun connectorRun = connectorCaptor.getValue();
+        assertEquals(ConnectorRun.Status.SUCCESS, connectorRun.getStatus());
+        assertEquals(0, connectorRun.getRecordsInserted());
+        assertEquals(1, connectorRun.getRecordsUpdated());
+        assertEquals(0, connectorRun.getRecordsError());
     }
 
     @Test

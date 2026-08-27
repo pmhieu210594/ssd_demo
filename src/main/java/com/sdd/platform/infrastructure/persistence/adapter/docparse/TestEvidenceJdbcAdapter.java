@@ -11,9 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -41,68 +39,41 @@ public class TestEvidenceJdbcAdapter implements TestEvidencePersistencePort {
             return;
         }
 
-        Set<String> distinctAcKeys = new LinkedHashSet<>(acKeys);
-        for (String acKey : distinctAcKeys) {
-            // Try to update an existing PLANNED row that is not linked to a test case or
-            // test run
-            int updated = jdbc.update("""
-                    UPDATE tbl_fact_ac_test_coverage
-                    SET artifact_snapshot_id = :snapshotId,
-                        ac_text_hash = :acTextHash,
-                        coverage_status = 'PLANNED',
-                        calculated_at = now(),
-                        updated_at = now(),
-                        updated_by = :actor
-                    WHERE ticket_id = :ticketId
-                      AND ac_key = :acKey
-                      AND test_run_id IS NULL
-                      AND test_case_id IS NULL
+        for (String acKey : acKeys) {
+            jdbc.update("""
+                    INSERT INTO tbl_fact_ac_test_coverage (
+                        ticket_id,
+                        artifact_snapshot_id,
+                        ac_id,
+                        ac_key,
+                        ac_text_hash,
+                        coverage_status,
+                        calculated_at,
+                        created_at,
+                        created_by,
+                        updated_at,
+                        updated_by
+                    )
+                    VALUES (
+                        :ticketId,
+                        :snapshotId,
+                        (SELECT ac_id FROM tbl_fact_acceptance_criteria WHERE ticket_id = :ticketId AND ac_key = :acKey LIMIT 1),
+                        :acKey,
+                        :acTextHash,
+                        'PLANNED',
+                        now(),
+                        now(),
+                        :actor,
+                        now(),
+                        :actor
+                    )
                     """,
                     new MapSqlParameterSource()
-                            .addValue("snapshotId", snapshotId)
-                            .addValue("acTextHash", acTextHash)
                             .addValue("ticketId", ticketId)
+                            .addValue("snapshotId", snapshotId)
                             .addValue("acKey", acKey)
+                            .addValue("acTextHash", acTextHash)
                             .addValue("actor", SYSTEM_ACTOR));
-
-            if (updated == 0) {
-                // No existing PLANNED unlinked row — insert a new PLANNED row
-                jdbc.update(
-                        """
-                                INSERT INTO tbl_fact_ac_test_coverage (
-                                    ticket_id,
-                                    artifact_snapshot_id,
-                                    ac_id,
-                                    ac_key,
-                                    ac_text_hash,
-                                    coverage_status,
-                                    calculated_at,
-                                    created_at,
-                                    created_by,
-                                    updated_at,
-                                    updated_by
-                                )
-                                VALUES (
-                                    :ticketId,
-                                    :snapshotId,
-                                    (SELECT ac_id FROM tbl_fact_acceptance_criteria WHERE ticket_id = :ticketId AND ac_key = :acKey LIMIT 1),
-                                    :acKey,
-                                    :acTextHash,
-                                    'PLANNED',
-                                    now(),
-                                    now(),
-                                    :actor,
-                                    now(),
-                                    :actor
-                                )
-                                """,
-                        new MapSqlParameterSource()
-                                .addValue("ticketId", ticketId)
-                                .addValue("snapshotId", snapshotId)
-                                .addValue("acKey", acKey)
-                                .addValue("acTextHash", acTextHash)
-                                .addValue("actor", SYSTEM_ACTOR));
-            }
         }
     }
 
@@ -117,7 +88,8 @@ public class TestEvidenceJdbcAdapter implements TestEvidencePersistencePort {
             }
             String basis = String.join("|", safe(r.ticketId()), safe(r.testCaseKey()));
             UUID testCaseId = UUID.nameUUIDFromBytes(basis.getBytes(StandardCharsets.UTF_8));
-            String nameHash = r.testCaseName() != null && !r.testCaseName().isBlank() ? sha256(r.testCaseName()) : null;
+            String nameHash = r.testCaseName() != null && !r.testCaseName().isBlank()
+                    ? sha256(r.testCaseName()) : null;
             jdbc.update("""
                     INSERT INTO tbl_fact_test_case (
                         test_case_id,
@@ -156,55 +128,29 @@ public class TestEvidenceJdbcAdapter implements TestEvidencePersistencePort {
     }
 
     @Override
-    public void updateTestCaseResults(List<TestCaseResultRecord> records) {
-        if (records == null || records.isEmpty())
+    public void updateTestCaseResults(List<TestEvidencePersistencePort.TestCaseResultRecord> records) {
+        if (records == null || records.isEmpty()) {
             return;
-        for (TestCaseResultRecord r : records) {
-            if (r.ticketId() == null || r.testCaseKey() == null || r.testCaseKey().isBlank())
+        }
+        for (TestEvidencePersistencePort.TestCaseResultRecord r : records) {
+            if (r.ticketId() == null || r.testCaseKey() == null || r.testCaseKey().isBlank()) {
                 continue;
-            String basis = String.join("|", safe(r.ticketId()), safe(r.testCaseKey()));
-            UUID testCaseId = UUID.nameUUIDFromBytes(basis.getBytes(StandardCharsets.UTF_8));
+            }
             jdbc.update("""
-                    INSERT INTO tbl_fact_test_case (
-                        test_case_id,
-                        test_run_id,
-                        ticket_id,
-                        test_case_key,
-                        status,
-                        failure_summary,
-                        created_at,
-                        created_by,
-                        updated_at,
-                        updated_by
-                    )
-                    VALUES (
-                        :testCaseId,
-                        :testRunId,
-                        :ticketId,
-                        :testCaseKey,
-                        CAST(:status AS run_status),
-                        :failureSummary,
-                        COALESCE(:collectedAt, now()),
-                        :actor,
-                        COALESCE(:collectedAt, now()),
-                        :actor
-                    )
-                    ON CONFLICT (ticket_id, test_case_key) DO UPDATE SET
-                        test_run_id = EXCLUDED.test_run_id,
-                        status = EXCLUDED.status,
-                        failure_summary = EXCLUDED.failure_summary,
-                        updated_at = EXCLUDED.updated_at,
-                        updated_by = EXCLUDED.updated_by
+                    UPDATE tbl_fact_test_case
+                    SET status = CAST(:status AS run_status),
+                        failure_summary = :failureSummary,
+                        test_run_id = :testRunId,
+                        updated_at = now()
+                    WHERE ticket_id = :ticketId
+                      AND test_case_key = :testCaseKey
                     """,
                     new MapSqlParameterSource()
-                            .addValue("testCaseId", testCaseId)
-                            .addValue("testRunId", r.testRunId())
                             .addValue("ticketId", r.ticketId())
                             .addValue("testCaseKey", r.testCaseKey())
                             .addValue("status", r.status())
                             .addValue("failureSummary", r.failureSummary())
-                            .addValue("collectedAt", null)
-                            .addValue("actor", SYSTEM_ACTOR));
+                            .addValue("testRunId", r.testRunId()));
         }
     }
 
@@ -213,18 +159,17 @@ public class TestEvidenceJdbcAdapter implements TestEvidencePersistencePort {
         if (records == null || records.isEmpty()) {
             return;
         }
-        // Delete existing mappings per ticket then re-insert
-        Set<UUID> ticketIds = new LinkedHashSet<>();
-        for (TestCaseAcRecord r : records) {
-            if (r.ticketId() != null)
-                ticketIds.add(r.ticketId());
+        UUID ticketId = records.stream()
+                .filter(r -> r.ticketId() != null)
+                .map(TestCaseAcRecord::ticketId)
+                .findFirst().orElse(null);
+        if (ticketId == null) {
+            return;
         }
-        for (UUID ticketId : ticketIds) {
-            jdbc.update("DELETE FROM tbl_fact_test_case_ac WHERE ticket_id = :ticketId",
-                    new MapSqlParameterSource("ticketId", ticketId));
-        }
+        jdbc.update("DELETE FROM tbl_fact_test_case_ac WHERE ticket_id = :ticketId",
+                new MapSqlParameterSource("ticketId", ticketId));
         for (TestCaseAcRecord r : records) {
-            if (r.testCaseId() == null || r.acKey() == null || r.acKey().isBlank() || r.ticketId() == null) {
+            if (r.testCaseId() == null || r.acKey() == null || r.acKey().isBlank()) {
                 continue;
             }
             jdbc.update("""
@@ -462,45 +407,10 @@ public class TestEvidenceJdbcAdapter implements TestEvidencePersistencePort {
                   AND m.ticket_id      = :ticketId
                   AND cov.ac_key       = m.ac_key
                   AND cov.test_case_id IS NULL
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM tbl_fact_ac_test_coverage existing
-                      WHERE existing.ticket_id = cov.ticket_id
-                        AND existing.ac_key = cov.ac_key
-                        AND existing.test_case_id = m.test_case_id
-                        AND existing.test_run_id IS NOT NULL
-                  )
                 """,
                 new MapSqlParameterSource()
                         .addValue("ticketId", ticketId)
                         .addValue("actor", SYSTEM_ACTOR));
-    }
-
-    @Override
-    public void deleteTestEvidenceByTicketId(UUID ticketId) {
-        if (ticketId == null) {
-            return;
-        }
-        jdbc.update("""
-                DELETE FROM tbl_fact_ac_test_coverage
-                WHERE ticket_id = :ticketId
-                """,
-                new MapSqlParameterSource("ticketId", ticketId));
-        jdbc.update("""
-                DELETE FROM tbl_fact_test_case_ac
-                WHERE ticket_id = :ticketId
-                """,
-                new MapSqlParameterSource("ticketId", ticketId));
-        jdbc.update("""
-                DELETE FROM tbl_fact_test_case
-                WHERE ticket_id = :ticketId
-                """,
-                new MapSqlParameterSource("ticketId", ticketId));
-        jdbc.update("""
-                DELETE FROM tbl_fact_test_run
-                WHERE ticket_id = :ticketId
-                """,
-                new MapSqlParameterSource("ticketId", ticketId));
     }
 
     @Override

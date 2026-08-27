@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -25,15 +24,11 @@ public class TeamService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final String MODULE = "TEAM";
-    private static final String ENTITY_TYPE = "TEAM";
 
     private final TeamRepositoryPort repository;
-    private final AdminAuditLogService adminAuditLogService;
 
-    public TeamService(TeamRepositoryPort repository, AdminAuditLogService adminAuditLogService) {
+    public TeamService(TeamRepositoryPort repository) {
         this.repository = repository;
-        this.adminAuditLogService = adminAuditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -54,41 +49,34 @@ public class TeamService {
     @Transactional(readOnly = true)
     public Team get(UUID teamId, AppUser caller) {
         requireAdmin(caller);
-        Team team = loadTeam(teamId);
-        return team;
+        return repository.findById(teamId)
+                .orElseThrow(() -> new NotFoundException("Pages.Team.NotFound"));
     }
 
     @Transactional
     public Team create(String teamCode, String teamName, String description, AppUser caller) {
         requireAdmin(caller);
-        try {
-            String normalizedCode = normalizeRequired(teamCode, 50, "Pages.Team.Code.Required");
-            String normalizedName = normalizeRequired(teamName, 255, "Pages.Team.Name.Required");
-            String normalizedDescription = normalizeOptional(description, 500, "Pages.Team.Description.MaxLength");
-            ensureUniqueCode(normalizedCode, null);
+        String normalizedCode = normalizeRequired(teamCode, 50, "Pages.Team.Code.Required");
+        String normalizedName = normalizeRequired(teamName, 255, "Pages.Team.Name.Required");
+        String normalizedDescription = normalizeOptional(description, 500, "Pages.Team.Description.MaxLength");
+        ensureUniqueCode(normalizedCode, null);
 
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            Team team = Team.builder()
-                    .teamId(UUID.randomUUID())
-                    .teamCode(normalizedCode)
-                    .teamName(normalizedName)
-                    .description(normalizedDescription)
-                    .status(Team.TeamStatus.ACTIVE)
-                    .createdAt(now)
-                    .createdBy(actor)
-                    .updatedAt(now)
-                    .updatedBy(actor)
-                    .version(0L)
-                    .memberCount(0L)
-                    .build();
-            Team created = repository.insert(team);
-            adminAuditLogService.logCreate(caller, MODULE, ENTITY_TYPE, created.getTeamId().toString(), created);
-            return created;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, null, "CREATE", ex.getMessage());
-            throw ex;
-        }
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        Team team = Team.builder()
+                .teamId(UUID.randomUUID())
+                .teamCode(normalizedCode)
+                .teamName(normalizedName)
+                .description(normalizedDescription)
+                .status(Team.TeamStatus.ACTIVE)
+                .createdAt(now)
+                .createdBy(actor)
+                .updatedAt(now)
+                .updatedBy(actor)
+                .version(0L)
+                .memberCount(0L)
+                .build();
+        return repository.insert(team);
     }
 
     @Transactional
@@ -102,68 +90,52 @@ public class TeamService {
             AppUser caller
     ) {
         requireAdmin(caller);
-        try {
-            Team existing = loadTeam(teamId);
-            ensureEditable(existing);
-            Map<String, Object> beforeSnapshot = adminAuditLogService.snapshot(existing);
+        Team existing = repository.findById(teamId)
+                .orElseThrow(() -> new NotFoundException("Pages.Team.NotFound"));
+        ensureEditable(existing);
 
-            String normalizedCode = normalizeRequired(teamCode, 50, "Pages.Team.Code.Required");
-            String normalizedName = normalizeRequired(teamName, 255, "Pages.Team.Name.Required");
-            String normalizedDescription = normalizeOptional(description, 500, "Pages.Team.Description.MaxLength");
-            Team.TeamStatus normalizedStatus = existing.getStatus();
-            String normalizedStatusInput = trimToNull(status);
-            if (normalizedStatusInput != null && !"ACTIVE".equalsIgnoreCase(normalizedStatusInput)) {
-                throw new BusinessRuleException("Pages.Team.Status.Invalid");
-            }
-            ensureUniqueCode(normalizedCode, teamId);
-
-            String actor = resolveActor(caller);
-            existing.setTeamCode(normalizedCode);
-            existing.setTeamName(normalizedName);
-            existing.setDescription(normalizedDescription);
-            existing.setStatus(normalizedStatus);
-            existing.setVersion(version);
-            existing.setUpdatedAt(OffsetDateTime.now());
-            existing.setUpdatedBy(actor);
-
-            int affected = repository.update(existing);
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Team.Conflict.Version");
-            }
-            Team updated = loadTeam(teamId);
-            adminAuditLogService.logUpdate(caller, MODULE, ENTITY_TYPE, teamId.toString(), beforeSnapshot, updated);
-            return updated;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, teamId.toString(), "UPDATE", ex.getMessage());
-            throw ex;
+        String normalizedCode = normalizeRequired(teamCode, 50, "Pages.Team.Code.Required");
+        String normalizedName = normalizeRequired(teamName, 255, "Pages.Team.Name.Required");
+        String normalizedDescription = normalizeOptional(description, 500, "Pages.Team.Description.MaxLength");
+        Team.TeamStatus normalizedStatus = existing.getStatus();
+        String normalizedStatusInput = trimToNull(status);
+        if (normalizedStatusInput != null && !"ACTIVE".equalsIgnoreCase(normalizedStatusInput)) {
+            throw new BusinessRuleException("Pages.Team.Status.Invalid");
         }
+        ensureUniqueCode(normalizedCode, teamId);
+
+        String actor = resolveActor(caller);
+        existing.setTeamCode(normalizedCode);
+        existing.setTeamName(normalizedName);
+        existing.setDescription(normalizedDescription);
+        existing.setStatus(normalizedStatus);
+        existing.setVersion(version);
+        existing.setUpdatedAt(OffsetDateTime.now());
+        existing.setUpdatedBy(actor);
+
+        int affected = repository.update(existing);
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Team.Conflict.Version");
+        }
+        return repository.findById(teamId)
+                .orElseThrow(() -> new NotFoundException("Pages.Team.NotFound"));
     }
 
     @Transactional
     public Team softDelete(UUID teamId, long version, AppUser caller) {
         requireAdmin(caller);
-        try {
-            Team existing = loadTeam(teamId);
-            if (existing.isDeleted()) {
-                throw new BusinessRuleException("Pages.Team.AlreadyDeleted");
-            }
-
-            String actor = resolveActor(caller);
-            OffsetDateTime now = OffsetDateTime.now();
-            int affected = repository.softDelete(teamId, version, actor, now, actor, now);
-            if (affected == 0) {
-                throw new OptimisticLockingException("Pages.Team.Conflict.Version");
-            }
-            Team deleted = loadTeam(teamId);
-            adminAuditLogService.logDelete(caller, MODULE, ENTITY_TYPE, teamId.toString(), existing);
-            return deleted;
-        } catch (RuntimeException ex) {
-            adminAuditLogService.logCrudFailure(caller, MODULE, ENTITY_TYPE, teamId.toString(), "DELETE", ex.getMessage());
-            throw ex;
+        Team existing = repository.findById(teamId)
+                .orElseThrow(() -> new NotFoundException("Pages.Team.NotFound"));
+        if (existing.isDeleted()) {
+            throw new BusinessRuleException("Pages.Team.AlreadyDeleted");
         }
-    }
 
-    private Team loadTeam(UUID teamId) {
+        String actor = resolveActor(caller);
+        OffsetDateTime now = OffsetDateTime.now();
+        int affected = repository.softDelete(teamId, version, actor, now, actor, now);
+        if (affected == 0) {
+            throw new OptimisticLockingException("Pages.Team.Conflict.Version");
+        }
         return repository.findById(teamId)
                 .orElseThrow(() -> new NotFoundException("Pages.Team.NotFound"));
     }
@@ -171,14 +143,14 @@ public class TeamService {
     @Transactional(readOnly = true)
     public List<TeamMember> listMembers(UUID teamId, AppUser caller) {
         requireAdmin(caller);
-        loadTeam(teamId);
+        get(teamId, caller);
         return repository.findMembers(teamId, "ACTIVE");
     }
 
     @Transactional
     public TeamMember addMember(UUID teamId, UUID memberKey, UUID roleId, AppUser caller) {
         requireAdmin(caller);
-        Team team = loadTeam(teamId);
+        Team team = get(teamId, caller);
         ensureActive(team);
         validateMemberAndRole(memberKey, roleId);
 
@@ -213,7 +185,7 @@ public class TeamService {
     @Transactional
     public TeamMember updateMemberRole(UUID teamId, UUID teamMemberId, UUID roleId, long version, AppUser caller) {
         requireAdmin(caller);
-        Team team = loadTeam(teamId);
+        Team team = get(teamId, caller);
         ensureActive(team);
         if (!repository.existsRole(roleId)) {
             throw new NotFoundException("Pages.Team.Role.NotFound");
@@ -239,7 +211,7 @@ public class TeamService {
     @Transactional
     public TeamMember removeMember(UUID teamId, UUID teamMemberId, long version, AppUser caller) {
         requireAdmin(caller);
-        Team team = loadTeam(teamId);
+        Team team = get(teamId, caller);
         ensureActive(team);
         TeamMember existing = repository.findMemberById(teamMemberId)
                 .orElseThrow(() -> new NotFoundException("Pages.Team.Member.NotFound"));

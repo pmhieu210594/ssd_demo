@@ -12,17 +12,11 @@
 - Reject and log (at WARN level) any request with an invalid or missing signature
 - Webhook endpoints are `permitAll` in Spring Security — signature is the only auth gate
 
-## Log / Audit Sanitization
-
-- Before writing an exception message into a log or audit payload, redact known secret-pattern substrings (`password`, `token`, `secret`, `apiKey`, `credential`); truncation alone does not prevent secret leakage.
-
 ## Error Responses
 
 - `GlobalExceptionHandler` is the single exception → HTTP status mapping point
 - Never add ad-hoc `ResponseEntity` status codes in controllers
-- Error responses use `ErrorResponse(timestamp, status, error, message, traceId)` only — `error` is
-  the internal machine-readable code (e.g. `"NOT_FOUND"`), not an HTTP status phrase; there is no
-  separate `errorCode` field (corrected 2026-08-20, source: `web/exception/ErrorResponse.java`)
+- Error responses use `ErrorResponse(timestamp, status, errorCode, message, traceId)` only
 - Stack traces must never reach the client; log them server-side with `traceId` for correlation
 
 ## Transport & Session
