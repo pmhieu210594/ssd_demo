@@ -1,53 +1,103 @@
 # Black-box Review Checklist — BLACKBOX-COVERAGE
 
-- **Ticket:** BLACKBOX-COVERAGE
-- **Trạng thái:** Draft
-- **Tạo ngày:** 2026-09-07 00:00
-- **Cập nhật ngày:** 2026-09-07 00:00
-
-> Checklist này nhắm vào các perspective black-box dễ bỏ sót, đối chiếu với `blackbox-testcases.md` và `test-data.md`. Không lặp lại nội dung đã có ở `review-checklist.md` (review implementation-level).
+**Ticket ID**: BLACKBOX-COVERAGE  
+**Create date**: 2026-09-07  
+**Author**: QA Team  
+**Update date**: 2026-09-07  
 
 ---
 
-## 1. Boundaries
+## How to use
+- Reviewer đánh dấu PASS / FAIL / SKIP (có lý do).  
+- Mọi FAIL ở P0 chặn release.  
+- P1/P2 gap phải có ticket follow-up hoặc risk acceptance note.  
 
-- [ ] Mẫu số = 0 cho từng thành phần riêng lẻ (AC, observation, case) đều được thử độc lập, không chỉ thử trường hợp tất cả bằng 0 cùng lúc. (`BBC-04`)
-- [ ] Có thử trường hợp tử số = mẫu số (100%) và tử số = 0 nhưng mẫu số > 0 (0%).
-- [ ] Có thử rounding ở giá trị thập phân dài (`81.818...` → `81.8`), không chỉ số tròn. (`BBC-14`)
-- [ ] Có thử ranh giới giữa "có case map nhưng không PASS hết" và "có case map và PASS hết" cho `AC Coverage (Execution)`. (`BBC-01`, `BBC-05`)
-- [ ] Có thử observation point chỉ có case `RELATED`, không có case `DIRECT` nào. (`BBC-08`)
+---
 
-## 2. Permissions
+## Category 1 — Boundary & Edge Combinations
 
-- [ ] Không có token → 401. (`BBC-09`)
-- [ ] Có token nhưng sai role trên đúng project → 403. (`BBC-10`)
-- [ ] Có role đúng nhưng ở project khác → 403.
-- [ ] `ADMIN` bypass vẫn xem đúng dữ liệu, không rò rỉ hoặc sai lệch giá trị. (`BBC-11`)
-- [ ] Không có test nào giả định chi tiết cách kiểm tra quyền nội bộ (chỉ kiểm HTTP status + body).
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 1.1 | Mẫu số = 0 riêng lẻ (AC/obs/case) | AC-BLACKBOX-COVERAGE-3/v1 | P0 | [ ] | |
+| 1.2 | Tử số = mẫu số (100%) và tử số = 0 (0%) | AC-BLACKBOX-COVERAGE-6/v1 | P0 | [ ] | |
+| 1.3 | Rounding giá trị thập phân dài | AC-BLACKBOX-COVERAGE-6/v1 | P1 | [ ] | |
+| 1.4 | Ranh giới case map PASS hết vs không PASS hết | AC-BLACKBOX-COVERAGE-1/v1 | P1 | [ ] | |
+| 1.5 | Obs chỉ có RELATED, không có DIRECT | AC-BLACKBOX-COVERAGE-4/v1 | P1 | [ ] | |
 
-## 3. Compatibility
+---
 
-- [ ] Field `blackboxCoveragePercent` giữ nguyên tên, kiểu dữ liệu, vị trí so với trước khi đổi. (`BBC-12`)
-- [ ] Không phát sinh field API mới riêng cho Design/Execution/Priority Coverage. (`BBC-12`)
-- [ ] Field/API của AC-Test Coverage hiện hữu không đổi giá trị khi Blackbox Coverage được thêm vào. (`BBC-13`)
-- [ ] Nhiều ticket trong cùng project không lẫn dữ liệu khi truy vấn tuần tự hoặc đổi filter. (`BBC-15`, `BBC-16`)
-- [ ] Format lỗi (401/403) vẫn theo đúng `ErrorResponse` hiện có của hệ thống, không có status code ad-hoc.
+## Category 2 — Permission & Access Control
 
-## 4. Exceptions
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 2.1 | Không có token → 401 | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+| 2.2 | Sai role trên đúng project → 403 | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+| 2.3 | Role đúng nhưng project khác → 403 | AC-BLACKBOX-COVERAGE-8/v1 | P1 | [ ] | |
+| 2.4 | ADMIN bypass vẫn đúng dữ liệu | AC-BLACKBOX-COVERAGE-8/v1 | P1 | [ ] | |
+| 2.5 | Chỉ kiểm HTTP status + body, không giả định logic nội bộ | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
 
-- [ ] Ticket chưa có `blackbox-testcases.md` → trả `0.0`, không lỗi 500. (`BBC-02`)
-- [ ] Ticket có design nhưng chưa từng chạy test → không lỗi, giá trị hợp lý theo trọng số Execution = 0. (`BBC-03`)
-- [ ] Case có trạng thái không xác định trong nguồn thô (khác `SUCCESS/FAILED/SKIPPED`) không làm vỡ tính toán, được xử lý như `NOT_RUN`.
-- [ ] `SKIP` và `NOT_RUN` đều không được tính là PASS, và được thử riêng biệt (không gộp chung một test). (`BBC-05`, `BBC-06`)
-- [ ] Giá trị trả về không bao giờ là `NaN` hoặc `null` trong bất kỳ biến thể mẫu số = 0 nào.
+---
 
-## 5. Performance degradation
+## Category 3 — Compatibility & Contract Stability
 
-- [ ] Không có black-box case nào giả định số lần query cụ thể (đây là chi tiết implementation) — chỉ quan sát: nhiều ticket/nhiều lần gọi liên tiếp không làm chậm response tới mức đổi hành vi quan sát được (timeout, response rỗng).
-- [ ] Nếu team cần bằng chứng runtime cho PERF-1/PERF-3 (`review-checklist.md` mục 4), việc đó nằm ngoài phạm vi tài liệu black-box này — ghi nhận là gap, không tự thêm case đo performance nội bộ ở đây.
-- [ ] Trường hợp project có nhiều ticket (`BBC-16`) chỉ dùng để xác nhận tính đúng đắn dữ liệu, không dùng để đo performance.
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 3.1 | Field `blackboxCoveragePercent` giữ nguyên tên/kiểu/vị trí | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+| 3.2 | Không phát sinh field API mới riêng | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+| 3.3 | Field AC-Test Coverage không đổi | AC-BLACKBOX-COVERAGE-7/v1 | P0 | [ ] | |
+| 3.4 | Nhiều ticket cùng project không lẫn dữ liệu | AC-BLACKBOX-COVERAGE-3/v1 | P2 | [ ] | |
+| 3.5 | Format lỗi 401/403 theo ErrorResponse hiện có | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
 
-## 6. Ghi chú giới hạn phạm vi
+---
 
-- Checklist này không thay thế `review-checklist.md` (implementation-level) hay `test-plan.md` (ma trận AC × test type).
-- Checklist này chỉ xác nhận các case trong `blackbox-testcases.md` đã phủ đủ góc nhìn dễ bỏ sót; không tự ý mở rộng thêm case mới nếu không có mục nào ở trên bị thiếu bằng chứng.
+## Category 4 — Exception Handling & Resilience
+
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 4.1 | Ticket chưa có testcases → trả 0.0, không lỗi | AC-BLACKBOX-COVERAGE-1/v1 | P0 | [ ] | |
+| 4.2 | Ticket có design nhưng chưa chạy test → Execution=0, giá trị hợp lý | AC-BLACKBOX-COVERAGE-2/v1 | P0 | [ ] | |
+| 4.3 | Case trạng thái không xác định xử lý như NOT_RUN | AC-BLACKBOX-COVERAGE-2/v1 | P1 | [ ] | |
+| 4.4 | SKIP và NOT_RUN không tính PASS, thử riêng biệt | AC-BLACKBOX-COVERAGE-2/v1 | P1 | [ ] | |
+| 4.5 | Giá trị trả về không bao giờ NaN/null | AC-BLACKBOX-COVERAGE-6/v1 | P0 | [ ] | |
+
+---
+
+## Category 5 — Performance / Degradation Signals (Black-box observable)
+
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 5.1 | Không giả định số lần query | AC-BLACKBOX-COVERAGE-3/v1 | P2 | [ ] | |
+| 5.2 | Nhiều ticket/nhiều lần gọi liên tiếp không làm chậm response | AC-BLACKBOX-COVERAGE-3/v1 | P2 | [ ] | |
+| 5.3 | Case nhiều ticket chỉ xác nhận đúng dữ liệu, không đo perf | AC-BLACKBOX-COVERAGE-7/v1 | P2 | [ ] | |
+
+---
+
+## Category 6 — Business Rule Integrity
+
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 6.1 | Công thức coverage tính đúng | AC-BLACKBOX-COVERAGE-5/v1 | P0 | [ ] | |
+| 6.2 | Priority weight áp dụng đúng | AC-BLACKBOX-COVERAGE-4/v1 | P1 | [ ] | |
+| 6.3 | Obs DIRECT mới được tính | AC-BLACKBOX-COVERAGE-4/v1 | P1 | [ ] | |
+
+---
+
+## Category 7 — i18n / Messaging / Operational Observability
+
+| # | Check item | AC references | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| 7.1 | Error message theo format chuẩn, không leak | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+| 7.2 | Error message có fallback/localization | AC-BLACKBOX-COVERAGE-8/v1 | P1 | [ ] | |
+| 7.3 | Error machine-readable cho FE | AC-BLACKBOX-COVERAGE-8/v1 | P0 | [ ] | |
+
+---
+
+## Sign-off
+
+| Role | Name | Date | Result |
+|---|---|---|---|
+| QA Lead |  |  |  |
+| Developer |  |  |  |
+| PM/BA |  |  |  |
+
+> **Release gate rule**: tất cả checklist P0 phải PASS trước khi release.
