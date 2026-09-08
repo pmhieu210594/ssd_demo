@@ -57,41 +57,42 @@ class TestPlanParseServiceTest {
     void parse_success_persists_all_sections_and_allows_detail_lookup() {
         ParseResult result = service.parseAndStore(request(fullMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.SUCCESS, result.parseStatus());
         assertNotNull(result.snapshot());
         assertEquals(7, result.fields().size());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertTrue(result.fields().stream().allMatch(ParseField::presentFlag));
         assertEquals(1, repository.snapshotCount());
         assertTrue(service.latestSnapshot(ticketId, ParseMode.DRAFT).isPresent());
 
         UUID snapshotId = result.snapshot().artifactSnapshotId();
         ParseResult detail = service.detail(snapshotId).orElseThrow();
-        assertEquals(ParseStatus.NOT_FOUND, detail.parseStatus());
+        assertEquals(ParseStatus.SUCCESS, detail.parseStatus());
         assertEquals(7, detail.fields().size());
         assertEquals(result.sourceHash(), detail.sourceHash());
         Mockito.verify(testEvidencePersistencePort).replacePlannedCoverage(
                 Mockito.any(),
                 Mockito.eq(ticketId),
                 Mockito.any(),
-                Mockito.argThat(List::isEmpty));
+                Mockito.argThat(list -> list.contains("AC-1")));
     }
 
     @Test
     void parse_missing_required_section_returns_partial_and_records_missing_field() {
-        ParseResult result = service.parseAndStore(request(missingPurposeMarkdown()));
+        ParseResult result = service.parseAndStore(request(missingBeUnitTestMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
         assertNotNull(result.snapshot());
-        assertFalse(result.missingFields().isEmpty());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertTrue(result.missingFields().contains("be_unit_test"));
+        assertTrue(result.fields().stream()
+                .anyMatch(f -> "be_unit_test".equals(f.sectionKey()) && !f.presentFlag()));
     }
 
     @Test
     void parse_duplicate_heading_returns_partial() {
-        ParseResult result = service.parseAndStore(request(duplicatePriorityMarkdown()));
+        ParseResult result = service.parseAndStore(request(duplicateBeUnitTestMarkdown()));
 
-        assertEquals(ParseStatus.NOT_FOUND, result.parseStatus());
-        assertTrue(result.fields().stream().noneMatch(ParseField::presentFlag));
+        assertEquals(ParseStatus.PARTIAL, result.parseStatus());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("duplicate")));
     }
 
     @Test
@@ -143,77 +144,82 @@ class TestPlanParseServiceTest {
 
     private String fullMarkdown() {
         return """
-                # Test Plan
+                # Kế hoạch kiểm thử — TICKET-1 (Feature)
 
-                ## 1. Purpose
-                Verify parsing of test-plan.md.
+                - **Ticket:** TICKET-1
+                - **Trạng thái:** Draft
+                - **Tạo ngày:** 2026-08-22
 
-                ## 2. AC Matrix ↔ Test Type
-                | AC ID | BE UT |
-                |---|---|
-                | AC-1 | ✅ |
+                > Mỗi AC phải được bao phủ bởi ít nhất một loại kiểm thử.
 
-                ## 3. Priority
-                | test item | priority |
-                |---|---|
-                | Parse | P0 |
+                ## 1. Ma trận bao phủ
 
-                ## 4. Reuse Existing Test
-                | existing test | path | covers | gap |
+                | #   | AC   | FE UT | BE UT | API IT | E2E | Black-box |
+                |---|---|---|---|---|---|---|
+                | 1   | AC-1 | ✅ | ✅ |  |  |  |
+
+                ## 2. Unit test FE
+
+                | #   | Tệp kiểm thử | Nội dung kiểm thử | AC  |
                 |---|---|---|---|
+                | 1   | Foo.test.tsx | Render component | AC-1 |
 
-                ## 5. Additional Test This Time
-                | TC ID | test | type | target | related AC |
+                ## 3. Unit test BE
+
+                | #   | Lớp kiểm thử | Nội dung kiểm thử | AC  |
+                |---|---|---|---|
+                | 1   | FooServiceTest | Verify parse logic | AC-1 |
+
+                ## 4. Integration test API
+
+                | #   | Endpoint | Kịch bản | AC  |
+                |---|---|---|---|
+                | 1   | GET /api/foo | Trả về danh sách | AC-1 |
+
+                ## 5. Kiểm thử E2E (Playwright)
+
+                | #   | Kịch bản | Các bước | Kết quả mong đợi | AC  |
                 |---|---|---|---|---|
-                | TC-1 | Parse test | BE UT | fields | AC-1 |
+                | 1   | Luồng chính | Mở trang, click nút | Hiển thị kết quả | AC-1 |
 
-                ### E2E Step-by-step Scenarios
-                | scenario | precondition | steps | expected |
-                |---|---|---|---|
-                | View pair | snapshot exists | open ticket | both tabs |
+                ## 6. Các lệnh chạy kiểm thử
 
-                ## 6. Areas intentionally left untested this time
-                | area | reason | risk |
-                |---|---|---|
-                | Raw editor | out of scope | low |
+                ```bash
+                mvn test
+                ```
 
-                ## 7. Data testing principles
-                Use dummy data only.
+                ## 7. Ghi chú / Ràng buộc
 
-                ## 8. Execution command
-                | command | purpose |
-                |---|---|
-                | mvn test | Run tests |
-
-                ## 9. Stop Condition
-                Stop if mapping is ambiguous.
-
-                ## 10. Required Human Decision
-                Confirm artifact tables.
+                Không có ràng buộc đặc biệt.
                 """;
     }
 
-    private String missingPurposeMarkdown() {
+    private String missingBeUnitTestMarkdown() {
         return fullMarkdown().replace("""
-                ## 1. Purpose
-                Verify parsing of test-plan.md.
+                ## 3. Unit test BE
+
+                | #   | Lớp kiểm thử | Nội dung kiểm thử | AC  |
+                |---|---|---|---|
+                | 1   | FooServiceTest | Verify parse logic | AC-1 |
 
                 """, "");
     }
 
-    private String duplicatePriorityMarkdown() {
+    private String duplicateBeUnitTestMarkdown() {
         return fullMarkdown().replace("""
-                ## 3. Priority
-                | test item | priority |
-                |---|---|
-                | Parse | P0 |
-                """, """
-                ## 3. Priority
-                | test item | priority |
-                |---|---|
-                | Parse | P0 |
+                ## 3. Unit test BE
 
-                ## 3. Priority
+                | #   | Lớp kiểm thử | Nội dung kiểm thử | AC  |
+                |---|---|---|---|
+                | 1   | FooServiceTest | Verify parse logic | AC-1 |
+                """, """
+                ## 3. Unit test BE
+
+                | #   | Lớp kiểm thử | Nội dung kiểm thử | AC  |
+                |---|---|---|---|
+                | 1   | FooServiceTest | Verify parse logic | AC-1 |
+
+                ## 3. Unit test BE
                 Duplicate section.
                 """);
     }
@@ -296,15 +302,19 @@ class TestPlanParseServiceTest {
     }
 
     @Test
-    void planned_test_cases_seeded_from_section5_with_tc_id() {
+    void planned_test_cases_seeded_from_fe_be_api_sections_with_synthesized_tc_id() {
         service.parseAndStore(request(fullMarkdown()));
 
-        Mockito.verify(testEvidencePersistencePort).replacePlannedCoverage(
-                Mockito.any(),
-                Mockito.eq(ticketId),
-                Mockito.any(),
-                Mockito.argThat(List::isEmpty));
-        Mockito.verify(testEvidencePersistencePort, Mockito.never()).upsertPlannedTestCases(Mockito.anyList());
-        Mockito.verify(testEvidencePersistencePort, Mockito.never()).upsertTestCaseAcMappings(Mockito.anyList());
+        Mockito.verify(testEvidencePersistencePort).upsertPlannedTestCases(
+                Mockito.argThat(list -> list.size() == 3
+                        && list.stream().anyMatch(tc -> "TC-FE-1".equals(tc.testCaseKey())
+                                && "Render component".equals(tc.testCaseName()))
+                        && list.stream().anyMatch(tc -> "TC-BE-1".equals(tc.testCaseKey())
+                                && "Verify parse logic".equals(tc.testCaseName()))
+                        && list.stream().anyMatch(tc -> "TC-API-1".equals(tc.testCaseKey())
+                                && "Trả về danh sách".equals(tc.testCaseName()))));
+        Mockito.verify(testEvidencePersistencePort).upsertTestCaseAcMappings(
+                Mockito.argThat(list -> list.size() == 3
+                        && list.stream().allMatch(m -> "AC-1".equals(m.acKey()))));
     }
 }

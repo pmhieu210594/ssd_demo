@@ -236,6 +236,68 @@ class TraceabilityServiceTest {
     }
 
     @Test
+    void getTraceability_maps_report_subsections_to_template_section_labels() {
+        UUID artifactSnapshotId = UUID.fromString("f07e0dca-c612-4c90-9b12-baf3dab9c6a2");
+        stubReportTraceability(List.of(
+                parsedSection(
+                        artifactSnapshotId,
+                        "REPORT",
+                        "Report",
+                        "đã_thay_đổi_gì",
+                        "Missing change summary",
+                        false,
+                        false,
+                        "REQUIRED_SECTION_MISSING"
+                ),
+                parsedSection(
+                        artifactSnapshotId,
+                        "REPORT",
+                        "Report",
+                        "lý_do",
+                        "Missing reason",
+                        false,
+                        false,
+                        "REQUIRED_SECTION_MISSING"
+                )
+        ));
+
+        TraceabilityModels.TraceabilityView view = service.getTraceability(ticketId);
+
+        assertEquals("Report is missing required section(s): Tóm tắt thay đổi",
+                view.brokenLinks().stream()
+                        .filter(item -> "REPORT-PARSER".equals(item.code()))
+                        .findFirst()
+                        .orElseThrow()
+                        .message());
+    }
+
+    @Test
+    void getTraceability_ignores_report_da_thay_doi_gi_subsection() {
+        UUID artifactSnapshotId = UUID.fromString("f07e0dca-c612-4c90-9b12-baf3dab9c6a3");
+        stubReportTraceability(List.of(
+                parsedSection(
+                        artifactSnapshotId,
+                        "REPORT",
+                        "Report",
+                        "đã_thay_đổi_gì",
+                        "Missing change summary",
+                        false,
+                        false,
+                        "REQUIRED_SECTION_MISSING"
+                )
+        ));
+
+        TraceabilityModels.TraceabilityView view = service.getTraceability(ticketId);
+
+        assertEquals(1, view.summary().foundCount());
+        assertEquals(8, view.summary().brokenLinkCount());
+        assertEquals(8, view.brokenLinks().size());
+        assertEquals(0, view.brokenLinks().stream()
+                .filter(item -> "REPORT-PARSER".equals(item.code()))
+                .count());
+    }
+
+    @Test
     void getTraceability_includes_review_round_count_and_review_comments() {
         Mockito.when(repository.findTicket(ticketId))
                 .thenReturn(Optional.of(new TraceabilityModels.TicketRow(
@@ -347,6 +409,26 @@ class TraceabilityServiceTest {
                 OffsetDateTime.parse("2026-06-20T09:00:00Z"),
                 null
         );
+    }
+
+    private void stubReportTraceability(List<TraceabilityModels.ParsedSectionRow> parsedSections) {
+        Mockito.when(repository.findTicket(ticketId))
+                .thenReturn(Optional.of(new TraceabilityModels.TicketRow(
+                        ticketId,
+                        UUID.randomUUID(),
+                        "ABC-123",
+                        "Traceability ticket",
+                        "OPEN"
+                )));
+        Mockito.when(repository.findArtifacts(ticketId)).thenReturn(List.of(
+                artifact("REPORT", "report.md")
+        ));
+        Mockito.when(repository.findPullRequests(ticketId)).thenReturn(List.of());
+        Mockito.when(repository.findCommits(ticketId)).thenReturn(List.of());
+        Mockito.when(repository.findCiRuns(ticketId)).thenReturn(List.of());
+        Mockito.when(repository.findTraceabilityLinks(ticketId)).thenReturn(List.of());
+        Mockito.when(repository.findParsedSections(ticketId)).thenReturn(parsedSections);
+        Mockito.when(repository.findEvidenceEvents(ticketId)).thenReturn(List.of());
     }
 
     private static TraceabilityModels.ParsedSectionRow parsedSection(

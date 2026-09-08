@@ -4,6 +4,7 @@ import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore;
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownDocument;
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownIssue;
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownPlaceholder;
+import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownSection;
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownTable;
 
 import java.util.*;
@@ -60,11 +61,12 @@ public class ReportMarkdownParser {
 
         Map<String, String> frontMatter = new LinkedHashMap<>(document.frontMatter());
         Map<String, String> headerMetadata = new LinkedHashMap<>(document.headerMetadata());
-        Map<String, String> sections = document.sectionMap();
+        List<MarkdownSection> sectionList = List.copyOf(document.sections());
+        Map<String, String> sections = materializeSections(sectionList);
         List<MarkdownTable> tables = List.copyOf(document.tables());
         List<AcceptedRiskRow> acceptedRisks = extractAcceptedRisks(tables);
 
-        String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath, sections);
+        String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath);
         if (ticketId == null || ticketId.isBlank()) {
             warnings.add(new ParsingIssue(
                     "ticket_id_missing",
@@ -250,6 +252,61 @@ public class ReportMarkdownParser {
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
+    private Map<String, String> materializeSections(List<MarkdownSection> sectionList) {
+        Map<String, String> sections = new LinkedHashMap<>();
+        for (MarkdownSection section : sectionList) {
+            sections.put(section.canonicalKey(), buildEffectiveSectionBody(section, sectionList));
+        }
+        return sections;
+    }
+
+    private String buildEffectiveSectionBody(MarkdownSection parent, List<MarkdownSection> sectionList) {
+        if (parent == null) {
+            return "";
+        }
+        List<MarkdownSection> children = findDynamicChildren(sectionList, parent.canonicalKey());
+        if (children.isEmpty()) {
+            return parent.body();
+        }
+        StringBuilder merged = new StringBuilder();
+        if (parent.body() != null && !parent.body().isBlank()) {
+            merged.append(parent.body().trim());
+        }
+        for (MarkdownSection child : children) {
+            String childBody = child.body() == null ? "" : child.body().trim();
+            if (childBody.isBlank()) {
+                continue;
+            }
+            if (merged.length() > 0) {
+                merged.append("\n\n");
+            }
+            merged.append("### ").append(child.title()).append('\n').append(childBody);
+        }
+        return merged.toString().trim();
+    }
+
+    private List<MarkdownSection> findDynamicChildren(List<MarkdownSection> sectionList, String parentKey) {
+        List<MarkdownSection> children = new ArrayList<>();
+        int parentLevel = -1;
+        boolean found = false;
+        for (MarkdownSection section : sectionList) {
+            if (!found) {
+                if (section.canonicalKey().equals(parentKey)) {
+                    parentLevel = section.level();
+                    found = true;
+                }
+                continue;
+            }
+            if (section.level() <= parentLevel) {
+                break;
+            }
+            if (section.level() == parentLevel + 1) {
+                children.add(section);
+            }
+        }
+        return children;
+    }
+
     private List<String> detectMissingFields(Map<String, String> sections) {
         List<String> missing = new ArrayList<>();
         for (String field : ALL_FIELDS) {
@@ -301,11 +358,14 @@ public class ReportMarkdownParser {
             summary.put(key, sections.get(key));
         }
 
-        // scoring aliases for report artifacts
-        summary.put("EDITED_SUMMARY", sections.get("EDITED_SUMMARY"));
-        summary.put("SCOPE_OF_INFLUENCE", sections.get("SCOPE_OF_INFLUENCE"));
-        summary.put("REVIEW_RESULTS", sections.get("REVIEW_RESULTS"));
-        summary.put("TEST_RESULTS", sections.get("TEST_RESULTS"));
+        // legacy aliases kept for downstream compatibility while report consumers move to template v2 keys
+        summary.put("EDITED_SUMMARY", resolveSection(sections, "TÓM_TẮT_THAY_ĐỔI", "EDITED_SUMMARY"));
+        summary.put("SCOPE_OF_INFLUENCE", resolveSection(sections, "PHẠM_VI_ẢNH_HƯỞNG", "SCOPE_OF_INFLUENCE"));
+        summary.put("REVIEW_RESULTS", resolveSection(sections, "KẾT_QUẢ_REVIEW", "REVIEW_RESULTS"));
+        summary.put("TEST_RESULTS", resolveSection(sections, "KẾT_QUẢ_KIỂM_THỬ", "TEST_RESULTS"));
+        summary.put("OPEN_ISSUES", resolveSection(sections, "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO", "OPEN_ISSUES"));
+        summary.put("ROLLBACK", resolveSection(sections, "QUY_TRÌNH_HOÀN_TÁC", "ROLLBACK"));
+        summary.put("OUTPUT_ARTIFACTS", resolveSection(sections, "DANH_MỤC_ĐẦU_RA", "OUTPUT_ARTIFACTS"));
 
         // counts
         summary.put("section_count", sections.size());
@@ -320,17 +380,45 @@ public class ReportMarkdownParser {
                 acceptedRisks.stream().filter(row -> "OPEN".equalsIgnoreCase(row.status())).count());
 
         // detection flags
-        summary.put("has_open_issue_detected", sections.containsKey("open_issues"));
-        summary.put("has_risk_detected", sections.containsKey("risks"));
-        summary.put("has_rollback_detected", sections.containsKey("rollback"));
+        summary.put("has_open_issue_detected", hasNonBlankSection(sections, "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO", "OPEN_ISSUES"));
+        summary.put("has_rollback_detected", hasNonBlankSection(sections, "QUY_TRÌNH_HOÀN_TÁC", "ROLLBACK"));
 
         return summary;
     }
 
+    private String resolveSection(Map<String, String> sections, String primaryKey, String... legacyKeys) {
+        String primary = sections.get(primaryKey);
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        if (legacyKeys == null) {
+            return primary;
+        }
+        for (String legacyKey : legacyKeys) {
+            String value = sections.get(legacyKey);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return primary;
+    }
+
+    private boolean hasNonBlankSection(Map<String, String> sections, String... keys) {
+        if (sections == null || keys == null) {
+            return false;
+        }
+        for (String key : keys) {
+            String value = sections.get(key);
+            if (value != null && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private String inferTicketId(Map<String, String> frontMatter,
             Map<String, String> headerMetadata,
-            String sourcePath,
-            Map<String, String> sections) {
+            String sourcePath) {
         String frontMatterTicketId = firstNonBlank(
                 frontMatter.get("ticket_id"),
                 frontMatter.get("ticket-id"),

@@ -81,6 +81,25 @@ class TicketBugMetricsControllerTest {
     }
 
     @Test
+    void byTicket_returns200WithMetric() throws Exception {
+        when(service.getByTicketId(eq(TICKET_ID), any(AuthUserContext.class)))
+                .thenReturn(java.util.Optional.of(activeMetric()));
+
+        mockMvc.perform(get("/api/v1/ticket-bug-metrics/by-ticket/{ticketId}", TICKET_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticketBugId").value(TICKET_BUG_ID.toString()));
+    }
+
+    @Test
+    void byTicket_returns200WithoutMetric() throws Exception {
+        when(service.getByTicketId(eq(TICKET_ID), any(AuthUserContext.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(get("/api/v1/ticket-bug-metrics/by-ticket/{ticketId}", TICKET_ID))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void create_returns201WithoutVersionField() throws Exception {
         when(service.create(eq(PROJECT_ID), eq(REPOSITORY_ID), eq(TICKET_ID), eq(1), eq(0), eq((String) null), any(AuthUserContext.class)))
                 .thenReturn(activeMetric());

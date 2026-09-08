@@ -83,6 +83,7 @@ public class ArtifactScannerService {
     private static final String SPEC_PACK_SOURCE_TYPE = "SPEC_PACK";
     private static final String REPORT_SOURCE_TYPE = "REPORT";
     private static final String OPEN_ISSUES_SECTION_KEY = "OPEN_ISSUES";
+    private static final String REPORT_NEXT_ACTIONS_SECTION_KEY = "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO";
 
     private final ArtifactScannerSourcePort source;
     private final ArtifactScannerPersistencePort persistence;
@@ -656,7 +657,7 @@ public class ArtifactScannerService {
         log.debug(
                 "Self-review parse details for {}: required_sections_missing={}, table_count={}, section_count={}, final_verdict={}",
                 sourcePath, parsed.requiredSectionsMissing().size(), parsed.tables().size(), parsed.sections().size(),
-                parsed.finalVerdict());
+                null);
 
         persistence.updateSnapshotParsedSummary(new ArtifactScannerModels.ParsedSummaryPatch(
                 snapshot.artifactSnapshotId(),
@@ -667,26 +668,42 @@ public class ArtifactScannerService {
 
         persistence.deleteParsedSectionsByTicketIdAndSectionType(ticketId, "self-review");
 
+        Set<String> missingRequiredKeys = normalizeMissingSelfReviewKeys(parsed.requiredSectionsMissing());
         Set<String> persistedRequiredKeys = new LinkedHashSet<>();
         for (var section : parsed.sections()) {
             String sectionKey = section.canonicalKey();
             String sectionText = section.body();
-            boolean present = isPresentSelfReviewSection(sectionKey, sectionText, parsed);
             boolean required = isRequiredSelfReviewSection(sectionKey);
+            String normalizedSectionKey = normalizeSectionType(sectionKey);
+            // Optional headings with no content are not missing required sections.
+            // Do not persist them as (required=false, present=false, valid=false),
+            // because traceability treats every invalid parsed-section row as a
+            // broken link independently of required_flag.
+            if (!required && (sectionText == null || sectionText.isBlank())) {
+                continue;
+            }
+            boolean missing = required && missingRequiredKeys.contains(normalizedSectionKey);
+            // For required sections, the parser already accounts for parent/child
+            // hierarchy and table semantics. Re-evaluating presence from the
+            // parent's own body would incorrectly mark a parent as missing when
+            // it is represented by a child section.
+            boolean present = required
+                    ? !missing
+                    : isPresentSelfReviewSection(sectionKey, sectionText, parsed);
             if (required) {
-                persistedRequiredKeys.add(normalizeSectionType(sectionKey));
+                persistedRequiredKeys.add(normalizedSectionKey);
             }
             persistence.insertParsedSection(new ArtifactScannerModels.ParsedSection(
                     snapshot.artifactSnapshotId(),
                     ticketId,
                     "self-review",
-                    canonicalKeyToLowercaseSnakeCase(sectionKey),
-                    sectionText != null && sectionText.length() > 500 ? sectionText.substring(0, 500) : sectionText,
+                    canonicalKeyToLowercaseSnakeCase(sectionKey.length() > 100 ? sectionKey.substring(0, 99) : sectionKey),
+                    sectionText != null && sectionText.length() > 100 ? sectionText.substring(0, 99) : sectionText,
                     computeSha256(sectionText != null ? sectionText : ""),
                     required,
                     present,
                     parsed.errors().isEmpty() && present,
-                    null));
+                    missing ? missingWarningForKey(normalizedSectionKey, parsed.requiredSectionsMissing()) : null));
         }
 
         for (String requiredKey : REQUIRED_SELF_REVIEW_SECTIONS) {
@@ -701,7 +718,7 @@ public class ArtifactScannerService {
                         true,
                         false,
                         false,
-                        null));
+                        missingWarningForKey(normalizeSectionType(requiredKey), parsed.requiredSectionsMissing())));
             }
         }
 
@@ -717,7 +734,7 @@ public class ArtifactScannerService {
                 String.format(Locale.ROOT,
                         "{\"parseStatus\":\"%s\",\"warnings\":%d,\"errors\":%d,\"finalVerdict\":\"%s\"}",
                         parsed.parseStatus(), parsed.warnings().size(), parsed.errors().size(),
-                        String.valueOf(parsed.finalVerdict()))));
+                        null)));
 
         if (!parsed.requiredSectionsMissing().isEmpty() || !parsed.errors().isEmpty()) {
             persistence.insertDataQualityRecord(new ArtifactScannerModels.DataQualityRecord(
@@ -732,10 +749,6 @@ public class ArtifactScannerService {
                     calculateFreshnessDelayMinutes(snapshot.sourceUpdatedAt()),
                     String.join("; ", parsed.errors().stream().map(e -> e.message()).toList())));
         }
-
-        // AC-FCI-4/5: persist explicit exception records from the EXCEPTION_RECORD
-        // section
-        persistExceptionRecords(snapshot, ticketId, repositoryId, sourcePath, parsed.exceptionRecords(), "self-review");
 
         if (evidenceQualityScoreService != null && ticketId != null) {
             evidenceQualityScoreService.recalculateFromParser(ticketId, null, runId.toString());
@@ -1116,17 +1129,24 @@ public class ArtifactScannerService {
             String sourceType) {
         List<ParsedIssue> issues = new ArrayList<>();
         for (MarkdownTable table : parsed.tables()) {
-            if (!OPEN_ISSUES_SECTION_KEY.equals(normalizeSectionType(table.sectionKey()))) {
+            String normalizedSectionKey = normalizeSectionType(table.sectionKey());
+            if (OPEN_ISSUES_SECTION_KEY.equals(normalizedSectionKey)) {
+                issues.addAll(mapOpenIssueTableRows(snapshot, ticketId, repositoryId, sourcePath, sourceType, table));
                 continue;
             }
-            issues.addAll(mapOpenIssueTableRows(snapshot, ticketId, repositoryId, sourcePath, sourceType, table));
+            if (normalizeSectionType(REPORT_NEXT_ACTIONS_SECTION_KEY).equals(normalizedSectionKey)) {
+                issues.addAll(mapReportNextActionRows(snapshot, ticketId, repositoryId, sourcePath, sourceType, table));
+                continue;
+            }
         }
 
         if (!issues.isEmpty()) {
             return issues;
         }
 
-        String sectionText = findSectionText(parsed.sections(), OPEN_ISSUES_SECTION_KEY);
+        String sectionText = firstNonBlank(
+                findSectionText(parsed.sections(), OPEN_ISSUES_SECTION_KEY),
+                findSectionText(parsed.sections(), normalizeSectionType(REPORT_NEXT_ACTIONS_SECTION_KEY)));
         if (sectionText == null || sectionText.isBlank() || isNoOpenIssuesText(sectionText)) {
             return issues;
         }
@@ -1151,6 +1171,51 @@ public class ArtifactScannerService {
                     null,
                     null,
                     issueText,
+                    sourcePath,
+                    snapshot.collectedAt()));
+        }
+        return issues;
+    }
+
+    private List<ParsedIssue> mapReportNextActionRows(ArtifactSnapshot snapshot,
+            UUID ticketId,
+            UUID repositoryId,
+            String sourcePath,
+            String sourceType,
+            MarkdownTable table) {
+        List<ParsedIssue> issues = new ArrayList<>();
+        if (table == null || table.rows() == null || table.rows().isEmpty()) {
+            return issues;
+        }
+        int order = 0;
+        for (List<String> row : table.rows()) {
+            String workItem = firstNonBlank(
+                    cell(row, findHeaderIndex(table.headers(), "công việc", "cong viec", "hạng mục", "hang muc", "task", "work item")),
+                    cell(row, 1));
+            String owner = firstNonBlank(
+                    cell(row, findHeaderIndex(table.headers(), "người phụ trách", "nguoi phu trach", "owner", "assignee", "responsible")),
+                    cell(row, 2));
+            String deadline = firstNonBlank(
+                    cell(row, findHeaderIndex(table.headers(), "hạn chót", "han chot", "deadline", "due date")),
+                    cell(row, 3));
+            if ((workItem == null || workItem.isBlank()) && (owner == null || owner.isBlank())
+                    && (deadline == null || deadline.isBlank())) {
+                continue;
+            }
+            order++;
+            String summary = buildIssueSummary(null, workItem, null, owner, "Open", row);
+            issues.add(new ParsedIssue(
+                    snapshot.artifactSnapshotId(),
+                    ticketId,
+                    repositoryId,
+                    sourceType,
+                    order,
+                    null,
+                    workItem,
+                    null,
+                    owner,
+                    "Open",
+                    summary + (deadline == null || deadline.isBlank() ? "" : " | deadline=" + deadline),
                     sourcePath,
                     snapshot.collectedAt()));
         }
@@ -1314,7 +1379,12 @@ public class ArtifactScannerService {
         return sectionText.lines()
                 .map(String::trim)
                 .filter(line -> !line.isBlank())
-                .anyMatch(line -> line.toLowerCase(Locale.ROOT).startsWith("no open issue"));
+                .anyMatch(line -> {
+                    String lower = line.toLowerCase(Locale.ROOT);
+                    return lower.startsWith("no open issue")
+                            || lower.startsWith("không còn")
+                            || lower.startsWith("khong con");
+                });
     }
 
     private String normalizeIssueTextLine(String line) {
@@ -1410,7 +1480,49 @@ public class ArtifactScannerService {
     private String normalizeSectionType(String sectionKey) {
         if (sectionKey == null)
             return null;
-        return sectionKey.toUpperCase().replace(" ", "_").replace("-", "_");
+        return sectionKey.toUpperCase(Locale.ROOT).replace(" ", "_").replace("-", "_");
+    }
+
+    private Set<String> normalizeMissingSelfReviewKeys(List<String> missingSections) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (missingSections == null) {
+            return normalized;
+        }
+        for (String missing : missingSections) {
+            if (missing == null || missing.isBlank()) {
+                continue;
+            }
+            String key = missing.trim();
+            if (key.startsWith("section:")) {
+                key = key.substring("section:".length());
+            } else if (key.startsWith("subsection:")) {
+                key = key.substring("subsection:".length());
+            }
+            if (key.endsWith(" table")) {
+                key = key.substring(0, key.length() - " table".length());
+            }
+            normalized.add(normalizeSectionType(key));
+        }
+        return normalized;
+    }
+
+    private String missingWarningForKey(String normalizedKey, List<String> missingSections) {
+        if (missingSections != null) {
+            for (String missing : missingSections) {
+                if (missing == null) {
+                    continue;
+                }
+                String prefix = missing.startsWith("subsection:") ? "subsection:" : "section:";
+                String key = missing.substring(prefix.length());
+                if (key.endsWith(" table")) {
+                    key = key.substring(0, key.length() - " table".length());
+                }
+                if (normalizedKey.equals(normalizeSectionType(key))) {
+                    return "subsection:".equals(prefix) ? "REQUIRED_SUBSECTION_MISSING" : "REQUIRED_SECTION_MISSING";
+                }
+            }
+        }
+        return "REQUIRED_SECTION_MISSING";
     }
 
     private String canonicalKeyToLowercaseSnakeCase(String key) {
@@ -1419,14 +1531,8 @@ public class ArtifactScannerService {
         return key.toLowerCase(Locale.ROOT);
     }
 
-    private boolean isRequiredSection(String sectionKey) {
-        String normalized = normalizeSectionType(sectionKey);
-        return REQUIRED_SPEC_PACK_SECTIONS.contains(normalized);
-    }
-
     private boolean isRequiredSelfReviewSection(String sectionKey) {
-        String normalized = normalizeSectionType(sectionKey);
-        return REQUIRED_SELF_REVIEW_SECTIONS.contains(normalized);
+        return SelfReviewMarkdownParser.isRequiredSectionKey(sectionKey);
     }
 
     private boolean isPlaceholderToken(String value) {
@@ -1447,7 +1553,7 @@ public class ArtifactScannerService {
         if (normalized == null) {
             return false;
         }
-        if (SELF_REVIEW_TABLE_SECTIONS.contains(normalized)) {
+        if (SelfReviewMarkdownParser.isTableSectionKey(normalized)) {
             return hasMeaningfulTableContent(parsed, normalized);
         }
         return sectionText != null && !sectionText.isBlank();
@@ -1464,30 +1570,9 @@ public class ArtifactScannerService {
                         .anyMatch(value -> value != null && !value.isBlank() && !isPlaceholderToken(value)));
     }
 
-    private static final List<String> REQUIRED_SPEC_PACK_SECTIONS = List.of(
-            "CONTEXT_PURPOSE", "SCOPE", "TERMINOLOGY", "AS_IS", "TO_BE", "DETAILED_SPECIFICATION",
-            "ACCEPTANCE_CRITERIA", "EXAMPLES", "HUMAN_DECISION_REQUIRED", "OPEN_ISSUES");
+    private static final List<String> REQUIRED_SELF_REVIEW_SECTIONS = SelfReviewMarkdownParser.requiredPersistenceSectionKeys();
 
-    private static final List<String> REQUIRED_SELF_REVIEW_SECTIONS = List.of(
-            "IMPLEMENTATION_SUMMARY",
-            "SPECIFICATION_AC_MATCHING",
-            "LIST_OF_CHANGED_FILES",
-            "RUN_COMMAND_AND_RESULTS",
-            "SELF_CHECK_USING_REVIEW_CHECKLIST",
-            "TEST_PLAN_CORRESPONDING_STATUS",
-            "BUGS_FOUND_AND_RESOLVED",
-            "UNPROCESSED_PENDING_ACCEPTED_RISK",
-            "ITEMS_REVIEWED_BY_HUMANS",
-            "FINAL_SELF_VERDICT");
-
-    private static final Set<String> SELF_REVIEW_TABLE_SECTIONS = Set.of(
-            "SPECIFICATION_AC_MATCHING",
-            "LIST_OF_CHANGED_FILES",
-            "RUN_COMMAND_AND_RESULTS",
-            "SELF_CHECK_USING_REVIEW_CHECKLIST",
-            "BUGS_FOUND_AND_RESOLVED",
-            "UNPROCESSED_PENDING_ACCEPTED_RISK",
-            "EXCEPTION_RECORD");
+    private static final Set<String> SELF_REVIEW_TABLE_SECTIONS = SelfReviewMarkdownParser.tableSectionKeys();
 
     private ScanCounts scanPhase0(UUID runId,
             UUID repositoryId,

@@ -63,7 +63,8 @@ public class SpecPackMarkdownParser {
     // sufficient; child content is not required for presence detection.
     // SCOPE is treated as present as soon as the heading exists.
     private static final Map<String, List<String>> PARENT_CHILD_HIERARCHY = Map.ofEntries(
-            Map.entry("PHẠM_VI", List.of("TRONG_PHẠM_VI", "NGOÀI_PHẠM_VI"))
+            Map.entry("PHẠM_VI", List.of("TRONG_PHẠM_VI", "NGOÀI_PHẠM_VI")),
+            Map.entry("HIỆN_TRẠNG_TRẠNG_THÁI_MỤC_TIÊU", List.of("CƠ_CHẾ_HIỆN_TẠI", "CẢI_TIẾN_THÊM_LẦN_NÀY"))
         );
 
     private final MarkdownParserCore core;
@@ -422,7 +423,7 @@ public class SpecPackMarkdownParser {
         // detection flags
         summary.put("has_open_issue_detected", sections.containsKey("CÁC_VẤN_ĐỀ_MỞ"));
         summary.put("has_risk_detected", sections.containsKey("RỦI_RO"));
-        summary.put("has_traceability_detected", sections.containsKey("ASSUMPTIONS_INFERENCE_LOG"));
+        summary.put("has_traceability_detected", sections.containsKey("BẢNG_TRUY_VẾT"));
         return summary;
     }
 

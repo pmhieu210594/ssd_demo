@@ -695,9 +695,9 @@ class EvidenceQualityScoreServiceTest {
                                                 11, 6, 0, 0, "PASS",
                                                 List.of(), List.of(),
                                                 Map.of(
-                                                                "RUN_COMMAND_AND_RESULTS", true,
+                                                                "CÁC_LỆNH_ĐÃ_CHẠY", true,
                                                                 "SELF_CHECK_USING_REVIEW_CHECKLIST", true,
-                                                                "UNPROCESSED_PENDING_ACCEPTED_RISK", true,
+                                                                "KNOWN_RISKS", true,
                                                                 "ITEMS_REVIEWED_BY_HUMANS", true,
                                                                 "FINAL_SELF_VERDICT", true),
                                                 Map.of("parseStatus", "SUCCESS", "final_verdict", "PASS"),

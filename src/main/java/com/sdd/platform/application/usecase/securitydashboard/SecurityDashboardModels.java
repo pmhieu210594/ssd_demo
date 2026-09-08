@@ -105,11 +105,11 @@ public final class SecurityDashboardModels {
     }
 
     /**
-     * Raw SAST scan snapshot used to derive Security Finding Resolution Time.
-     * See SECURITY-FINDING-RESOLUTION-TIME spec-pack.md BR-1/BR-2.
+     * Raw FAIL scan snapshot used to derive Security Finding Resolution Time.
+     * See SECURITY-FINDING-RESOLUTION-TIME spec-pack.md BR-1/BR-2 (revision
+     * 2026-08-26).
      */
     public record SecurityScanSnapshot(
-            int unresolvedCount,
             OffsetDateTime collectedAt
     ) {
     }

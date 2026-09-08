@@ -529,18 +529,17 @@ public class SecurityDashboardJdbcAdapter implements SecurityDashboardRepository
                 rs.getString("follow_up_status"),
                 rs.getObject("expiry_date", java.time.LocalDate.class)));
 
-        // SECURITY-FINDING-RESOLUTION-TIME: BR-1 — SAST scan history only, ordered
-        // ascending so SecurityFindingResolutionTimeCalculator can walk cycles in
-        // chronological order.
-        List<SecurityScanSnapshot> sastHistory = jdbc.query("""
-                SELECT unresolved_count, collected_at
+        // SECURITY-FINDING-RESOLUTION-TIME: BR-1 (revision 2026-08-26) — FAIL scan
+        // history across every scanner_type, ordered ascending so
+        // SecurityFindingResolutionTimeCalculator can take first/last.
+        List<SecurityScanSnapshot> failHistory = jdbc.query("""
+                SELECT collected_at
                 FROM tbl_fact_security_scan
-                WHERE ticket_id = :ticketId AND scanner_type = 'SAST'
+                WHERE ticket_id = :ticketId AND scan_status = 'FAIL'
                 ORDER BY collected_at ASC
                 """, params, (rs, rowNum) -> new SecurityScanSnapshot(
-                rs.getInt("unresolved_count"),
                 rs.getObject("collected_at", OffsetDateTime.class)));
-        String resolutionTime = SecurityFindingResolutionTimeCalculator.compute(sastHistory);
+        String resolutionTime = SecurityFindingResolutionTimeCalculator.compute(failHistory);
 
         return Optional.of(new SecurityTicketDetail(
                 header.ticketId(),

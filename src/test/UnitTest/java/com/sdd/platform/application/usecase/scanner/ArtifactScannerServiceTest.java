@@ -622,16 +622,14 @@ class ArtifactScannerServiceTest {
 
                                 **Ticket ID**: PARSER-SELF-REVIEW
 
-                                ## 4. Run Command and Results
-                                | command | result |
-                                |---|---|
+                                ## Rủi ro đã biết / Chưa bao phủ / Công việc còn lại
+                                ### Known risks
+                                | # | Risk | Impact | Mitigation |
+                                |---|---|---|---|
 
-                                ## 8. Unprocessed / Pending / Accepted Risk
-                                | item | reason | impact | owner | deadline |
-                                |---|---|---|---|---|
-
-                                ## 11. Final Self-Verdict
-                                PASS
+                                ## Confirmations cuối cùng
+                                | # | Confirmation | Trạng thái |
+                                |---|---|---|
                                 """;
 
                 FakeGitHubArtifactScannerSource localSource = new FakeGitHubArtifactScannerSource(
@@ -655,11 +653,11 @@ class ArtifactScannerServiceTest {
 
                 assertEquals("SUCCESS", run.status());
                 assertTrue(localPersistence.parsedSections().stream()
-                                .filter(section -> "RUN_COMMAND_AND_RESULTS".equals(section.sectionKey()))
-                                .allMatch(section -> !section.presentFlag() && !section.validFlag()));
+                                .anyMatch(section -> "known_risks".equals(section.sectionKey())
+                                                && section.requiredFlag() && !section.presentFlag()));
                 assertTrue(localPersistence.parsedSections().stream()
-                                .filter(section -> "UNPROCESSED_PENDING_ACCEPTED_RISK".equals(section.sectionKey()))
-                                .allMatch(section -> !section.presentFlag() && !section.validFlag()));
+                                .anyMatch(section -> "confirmations_cuối_cùng".equals(section.sectionKey())
+                                                && section.requiredFlag() && !section.presentFlag()));
         }
 
         @Test
@@ -669,13 +667,11 @@ class ArtifactScannerServiceTest {
 
                                 **Ticket ID**: PARSER-SELF-REVIEW
 
-                                ## 4. Run Command and Results
-                                | command | result |
-                                |---|---|
-                                | build | PASS |
-
-                                ## 11. Final Self-Verdict
-                                PASS
+                                ## Rủi ro đã biết / Chưa bao phủ / Công việc còn lại
+                                ### Known risks
+                                | # | Risk | Impact | Mitigation |
+                                |---|---|---|---|
+                                | 1 | risk | Low | monitor |
                                 """;
 
                 String updatedSelfReview = """
@@ -683,13 +679,10 @@ class ArtifactScannerServiceTest {
 
                                 **Ticket ID**: PARSER-SELF-REVIEW
 
-                                ## 7. Bugs Found and Resolved
+                                ## Bugs Found and Resolved
                                 | bug | fixed | note |
                                 |---|---|---|
                                 | issue | yes | done |
-
-                                ## 11. Final Self-Verdict
-                                PASS
                                 """;
 
                 FakeGitHubArtifactScannerSource localSource = new FakeGitHubArtifactScannerSource(
@@ -721,18 +714,15 @@ class ArtifactScannerServiceTest {
                                 "tester",
                                 "trace-self-review-2"));
 
-                assertEquals(1, localPersistence.parsedSections().stream()
-                                .filter(section -> "run_command_and_results".equals(section.sectionKey()))
-                                .count());
                 assertTrue(localPersistence.parsedSections().stream()
-                                .filter(section -> "run_command_and_results".equals(section.sectionKey()))
-                                .allMatch(section -> !section.presentFlag()));
+                                .filter(section -> "known_risks".equals(section.sectionKey()))
+                                .allMatch(section -> section.requiredFlag() && !section.presentFlag()));
                 assertTrue(localPersistence.parsedSections().stream()
                                 .filter(section -> "bugs_found_and_resolved".equals(section.sectionKey()))
                                 .anyMatch(section -> section.presentFlag()));
                 assertTrue(localPersistence.parsedSections().stream()
                                 .filter(section -> "bugs_found_and_resolved".equals(section.sectionKey()))
-                                .allMatch(section -> section.requiredFlag()));
+                                .allMatch(section -> !section.requiredFlag()));
         }
 
         @Test
@@ -1095,14 +1085,18 @@ class ArtifactScannerServiceTest {
                                 "fedcba9876543210fedcba9876543210fedcba98", COMMITTED_AT);
 
                 String checklist = """
-                                    # Security
+                                    # Danh sách kiểm tra review — PARSER-REVIEW-CHECKLIST
 
-                                    - [ ] validate auth
-                                    - [x] check secret
+                                    ## 3. Bảo mật
+                                    | # | Hạng mục | Mức độ | Trạng thái |
+                                    | --- | --- | --- | --- |
+                                    | RC-11 | validate auth | Blocker | [ ] |
+                                    | RC-12 | check secret | Blocker | [x] |
 
-                                    # Test
-
-                                    - [ ] add unit test
+                                    ## 8. Kiểm thử
+                                    | # | Hạng mục | Mức độ | Trạng thái |
+                                    | --- | --- | --- | --- |
+                                    | RC-33 | add unit test | Major | [ ] |
                                 """;
 
                 localSource.put("changes/PARSER-REVIEW-CHECKLIST/review-checklist.md", checklist);
@@ -1141,24 +1135,17 @@ class ArtifactScannerServiceTest {
         }
 
         @Test
-        void ticket_scoped_scan_marks_heading_only_general_system_review_as_present_when_children_have_body() {
-                // Regression test: GENERAL_SYSTEM_REVIEW has no body of its own (it's a
-                // heading-only parent whose real content lives in nested child sections).
-                // The parser's own detectMissingFields() correctly treats this as present,
-                // but persistReviewChecklistParse used to persist present_flag=false while
-                // valid_flag=true for this row - an internally contradictory row that
-                // downstream traceability code read as "missing required section".
+        void ticket_scoped_scan_marks_table_based_review_section_as_present() {
                 FakeGitHubArtifactScannerSource localSource = new FakeGitHubArtifactScannerSource(
                                 "fedcba9876543210fedcba9876543210fedcba98", COMMITTED_AT);
 
                 String checklist = """
-                                # Review Checklist
-                                **Ticket ID**: PARSER-REVIEW-CHECKLIST
+                                # Danh sách kiểm tra review — PARSER-REVIEW-CHECKLIST
 
-                                ## 2. General System Review
-
-                                ### 2.1. Number/Input Check
-                                - [x] Count validation is present
+                                ## 3. Bảo mật
+                                | # | Hạng mục | Mức độ | Trạng thái |
+                                | --- | --- | --- | --- |
+                                | RC-11 | Count validation is present | Blocker | [x] |
                                 """;
 
                 localSource.put("changes/PARSER-REVIEW-CHECKLIST/review-checklist.md", checklist);
@@ -1177,7 +1164,7 @@ class ArtifactScannerServiceTest {
                                 List.of("PARSER-REVIEW-CHECKLIST"),
                                 ArtifactScanTriggerType.MANUAL,
                                 "tester",
-                                "trace-general-system-review"));
+                                "trace-review-checklist-table-section"));
 
                 assertEquals("SUCCESS", run.status());
 
@@ -1185,7 +1172,9 @@ class ArtifactScannerServiceTest {
                                 .anyMatch(section -> "review-checklist".equals(section.sectionType())));
                 assertTrue(localPersistence.parsedSections().stream()
                                 .filter(section -> "review-checklist".equals(section.sectionType()))
-                                .anyMatch(section -> section.presentFlag() || section.validFlag()));
+                                .anyMatch(section -> "bảo_mật".equals(section.sectionKey())
+                                                && section.presentFlag()
+                                                && Boolean.TRUE.equals(section.validFlag())));
         }
 
         @Test
@@ -1194,14 +1183,18 @@ class ArtifactScannerServiceTest {
                                 "fedcba9876543210fedcba9876543210fedcba98", COMMITTED_AT);
 
                 String checklist = """
-                                    # Security
+                                    # Danh sách kiểm tra review — PARSER-REVIEW-CHECKLIST
 
-                                    - [ ] validate auth
-                                    - [x] check secret
+                                    ## 3. Bảo mật
+                                    | # | Hạng mục | Mức độ | Trạng thái |
+                                    | --- | --- | --- | --- |
+                                    | RC-11 | validate auth | Blocker | [ ] |
+                                    | RC-12 | check secret | Blocker | [x] |
 
-                                    # Test
-
-                                    - [ ] add unit test
+                                    ## 8. Kiểm thử
+                                    | # | Hạng mục | Mức độ | Trạng thái |
+                                    | --- | --- | --- | --- |
+                                    | RC-33 | add unit test | Major | [ ] |
                                 """;
 
                 localSource.put("changes/PARSER-REVIEW-CHECKLIST/review-checklist.md", checklist);

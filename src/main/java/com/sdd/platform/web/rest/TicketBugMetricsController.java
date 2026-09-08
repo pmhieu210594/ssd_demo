@@ -49,7 +49,7 @@ public class TicketBugMetricsController {
     ) {
         return service.getByTicketId(ticketId, caller)
                 .map(model -> ResponseEntity.ok(TicketBugMetricsDtos.TicketBugMetricsDto.from(model)))
-                .orElse(ResponseEntity.notFound().build());
+                .orElse(ResponseEntity.ok().build());
     }
 
     @GetMapping("/{id}")

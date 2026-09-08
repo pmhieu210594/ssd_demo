@@ -8,12 +8,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -25,7 +27,9 @@ import static com.sdd.platform.application.usecase.traceability.TraceabilityMode
 public class TraceabilityService {
 
     private static final Logger log = LoggerFactory.getLogger(TraceabilityService.class);
+    private static final String REPORT_ARTIFACT_TYPE = "REPORT";
     private static final int EXPECTED_EVIDENCE_COUNT = REQUIRED_ARTIFACT_CODES.size() + 2;
+    private static final Map<String, ReportSectionRule> REPORT_SECTION_RULES = createReportSectionRules();
 
     private final TraceabilityRepositoryPort repository;
 
@@ -279,6 +283,11 @@ public class TraceabilityService {
         if (section == null) {
             return false;
         }
+        if (resolveReportSectionRule(section)
+                .map(ReportSectionRule::ignoreAsBrokenLink)
+                .orElse(false)) {
+            return false;
+        }
         boolean consideredPresent = section.presentFlag()
                 || (section.validFlag() != null && section.validFlag());
         if (section.requiredFlag() && !consideredPresent) {
@@ -297,10 +306,84 @@ public class TraceabilityService {
         if (section.sectionKey() == null || section.sectionKey().isBlank()) {
             return "unknown section";
         }
+        String reportLabel = resolveReportSectionRule(section)
+                .map(ReportSectionRule::displayLabel)
+                .orElse(null);
+        if (reportLabel != null) {
+            return reportLabel;
+        }
         return Stream.of(section.sectionKey().trim().split("[-_\\s]+"))
                 .filter(token -> !token.isBlank())
                 .map(token -> token.substring(0, 1).toUpperCase(Locale.ROOT) + token.substring(1))
                 .collect(Collectors.joining(" "));
+    }
+
+    private Optional<ReportSectionRule> resolveReportSectionRule(TraceabilityModels.ParsedSectionRow section) {
+        if (!isReportSection(section) || section.sectionKey() == null || section.sectionKey().isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(REPORT_SECTION_RULES.get(normalizeSectionLookupKey(section.sectionKey())));
+    }
+
+    private boolean isReportSection(TraceabilityModels.ParsedSectionRow section) {
+        return REPORT_ARTIFACT_TYPE.equals(normalizeArtifactTypeCode(section));
+    }
+
+    private String normalizeArtifactTypeCode(TraceabilityModels.ParsedSectionRow section) {
+        if (section == null || section.artifactTypeCode() == null) {
+            return "";
+        }
+        return section.artifactTypeCode().trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static Map<String, ReportSectionRule> createReportSectionRules() {
+        Map<String, ReportSectionRule> rules = new LinkedHashMap<>();
+        addReportSectionRule(rules, "Tóm tắt thay đổi", false,
+                "tom_tat_thay_doi", "ly_do", "edited_summary", "summary");
+        addReportSectionRule(rules, "Tóm tắt thay đổi", true, "da_thay_doi_gi");
+
+        addReportSectionRule(rules, "Phạm vi ảnh hưởng", false,
+                "pham_vi_anh_huong", "scope_of_influence", "impact_scope");
+        addReportSectionRule(rules, "Kết quả review", false,
+                "ket_qua_review", "review_results");
+        addReportSectionRule(rules, "Kết quả kiểm thử", false,
+                "ket_qua_kiem_thu", "test_results");
+        addReportSectionRule(rules, "Công việc còn lại / Hành động tiếp theo", false,
+                "cong_viec_con_lai_hanh_dong_tiep_theo",
+                "remaining_work_next_actions",
+                "remaining_work_next_action",
+                "next_actions",
+                "open_issues");
+        addReportSectionRule(rules, "Quy trình hoàn tác", false,
+                "quy_trinh_hoan_tac", "rollback_procedure", "rollback_plan", "rollback");
+        addReportSectionRule(rules, "Danh mục đầu ra", false,
+                "danh_muc_dau_ra", "output_inventory", "deliverables", "output_catalog", "output_artifacts");
+        return Map.copyOf(rules);
+    }
+
+    private static void addReportSectionRule(
+            Map<String, ReportSectionRule> rules,
+            String displayLabel,
+            boolean ignoreAsBrokenLink,
+            String... keys
+    ) {
+        ReportSectionRule rule = new ReportSectionRule(displayLabel, ignoreAsBrokenLink);
+        for (String key : keys) {
+            rules.put(key, rule);
+        }
+    }
+
+    private static String normalizeSectionLookupKey(String value) {
+        if (value == null) {
+            return "";
+        }
+        return Normalizer.normalize(value.trim(), Normalizer.Form.NFD)
+                .replace('đ', 'd')
+                .replace('Đ', 'D')
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
     }
 
     private static TraceabilityModels.ArtifactCoverageRow preferLatest(
@@ -344,5 +427,8 @@ public class TraceabilityService {
 
     private static String safeSortValue(UUID value) {
         return value == null ? "" : value.toString();
+    }
+
+    private record ReportSectionRule(String displayLabel, boolean ignoreAsBrokenLink) {
     }
 }

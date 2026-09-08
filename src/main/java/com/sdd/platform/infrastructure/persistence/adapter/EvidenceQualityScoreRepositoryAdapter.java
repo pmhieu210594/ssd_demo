@@ -11,6 +11,7 @@ import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.S
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TestSignal;
 import com.sdd.platform.application.usecase.quality.EvidenceQualityScoreModels.TraceabilitySignal;
 import com.sdd.platform.application.usecase.quality.ScoreThresholdConfigService;
+import com.sdd.platform.domain.service.markdown.reviewchecklist.ReviewChecklistMarkdownParser;
 import com.sdd.platform.infrastructure.persistence.mapper.EvidenceQualityScoreMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -57,21 +58,22 @@ public class EvidenceQualityScoreRepositoryAdapter implements EvidenceQualitySco
         ArtifactSignal implPlan = loadArtifactSignal(ticketId, "IMPL_PLAN",
                 List.of("IMPLEMENTATION_PRINCIPLE", "ALTERNATIVE_PLAN", "MIGRATION_ROLLBACK_POLICY",
                         "CORRESPONDING_AC_TABLE", "STEP_IMPLEMENTATION"));
-        ArtifactSignal reviewChecklist = loadArtifactSignal(ticketId, "REVIEW_CHECKLIST", List.of());
+        ArtifactSignal reviewChecklist = loadArtifactSignal(ticketId, "REVIEW_CHECKLIST",
+                ReviewChecklistMarkdownParser.requiredSectionKeys());
         ArtifactSignal selfReview = loadArtifactSignal(ticketId, "SELF_REVIEW",
-                List.of("RUN_COMMAND_AND_RESULTS", "SELF_CHECK_USING_REVIEW_CHECKLIST",
-                        "UNPROCESSED_PENDING_ACCEPTED_RISK", "ITEMS_REVIEWED_BY_HUMANS", "FINAL_SELF_VERDICT"));
+                List.of("CÁC_LỆNH_ĐÃ_CHẠY", "KNOWN_RISKS"));
         ArtifactSignal testPlan = loadArtifactSignal(ticketId, "TEST_PLAN",
                 List.of("AC_MATRIX_TEST_TYPE", "ADDITIONAL_TEST_THIS_TIME", "EXECUTION_COMMAND", "STOP_CONDITION"));
         ArtifactSignal testResults = loadArtifactSignal(ticketId, "TEST_RESULTS",
                 List.of("EXECUTION_ENVIRONMENT", "EXECUTED_COMMAND", "SUMMARY_OF_RESULTS", "FINAL_TEST_VERDICT"));
         ArtifactSignal blackboxTestcases = loadArtifactSignal(ticketId, "BLACKBOX_TESTCASES", List.of());
         ArtifactSignal report = loadArtifactSignal(ticketId, "REPORT", List.of(
-                "EDITED_SUMMARY",
-                "SCOPE_OF_INFLUENCE",
-                "REVIEW_RESULTS",
-                "TEST_RESULTS",
-                "OPEN_ISSUES"));
+                "TÓM_TẮT_THAY_ĐỔI",
+                "PHẠM_VI_ẢNH_HƯỞNG",
+                "KẾT_QUẢ_REVIEW",
+                "KẾT_QUẢ_KIỂM_THỬ",
+                "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO",
+                "QUY_TRÌNH_HOÀN_TÁC"));
         ReviewSignal review = loadReviewSignal(ticketId);
         CiSignal ci = loadCiSignal(ticketId);
         TestSignal test = loadTestSignal(ticketId);

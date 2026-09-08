@@ -12,6 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ReportMarkdownParserTest {
 
+    private static final String REPORT_SOURCE_PATH = "docs/changes/PARSER-REPORT/report.md";
+
     private final ReportMarkdownParser parser = new ReportMarkdownParser();
 
     @Test
@@ -30,43 +32,39 @@ class ReportMarkdownParserTest {
 
     @Test
     void parse_missingSections_returnsStatusPartial() {
-        ParsedArtifact parsed = parser.parse("## Summary\nPresent content only in one section.", "docs/changes/PARSER-REPORT/report.md");
+        ParsedArtifact parsed = parser.parse("## Summary\nPresent content only in one section.", REPORT_SOURCE_PATH);
         assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
         assertThat(parsed.warnings()).extracting(ParsingIssue::code).contains("required_fields_missing");
     }
 
     @Test
     void parse_placeholderContent_returnsStatusPartial() throws Exception {
-        var resource = ReportMarkdownParserTest.class.getClassLoader().getResource("test-fixtures/PARSER-REPORT/placeholder-content.md");
-        String content = Files.readString(Path.of(resource.toURI()));
-        ParsedArtifact parsed = parser.parse(content, "docs/changes/PARSER-REPORT/report.md");
+        ParsedArtifact parsed = parser.parse(readFixture("placeholder-content.md"), REPORT_SOURCE_PATH);
         assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
         assertThat(parsed.warnings()).extracting(ParsingIssue::code).contains("placeholder_detected");
     }
 
     @Test
-    void parse_fullValidReport_returnsStatusPartial_withCurrentRequiredFields() throws Exception {
-        var resource = ReportMarkdownParserTest.class.getClassLoader().getResource("test-fixtures/PARSER-REPORT/valid-full-report.md");
-        String content = Files.readString(Path.of(resource.toURI()));
-        ParsedArtifact parsed = parser.parse(content, "docs/changes/PARSER-REPORT/report.md");
-        assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
+    void parse_fullValidReport_returnsDraft_whenTemplateSectionsAreComplete() throws Exception {
+        ParsedArtifact parsed = parser.parse(readFixture("valid-full-report.md"), REPORT_SOURCE_PATH);
+        assertThat(parsed.parseStatus()).isEqualTo("DRAFT");
         assertThat(parsed.errors()).isEmpty();
-        assertThat(parsed.warnings()).extracting(ParsingIssue::code).contains("required_fields_missing");
+        assertThat(parsed.warnings()).isEmpty();
+        assertThat(parsed.headerMetadata())
+                .containsEntry("ticket_id", "PARSER-REPORT")
+                .containsEntry("create_date", "2026-08-25 10:00")
+                .containsEntry("update_date", "2026-08-25 10:15");
     }
 
     @Test
-    void parse_officialMode_returnsStatusPartial_whenWarningsExist() throws Exception {
-        var resource = ReportMarkdownParserTest.class.getClassLoader().getResource("test-fixtures/PARSER-REPORT/valid-full-report.md");
-        String content = Files.readString(Path.of(resource.toURI()));
-        ParsedArtifact parsed = parser.parse(content, "docs/changes/PARSER-REPORT/report.md", "official");
-        assertThat(parsed.parseStatus()).isEqualTo("PARTIAL");
+    void parse_officialMode_returnsStatusOfficial_whenTemplateSectionsAreComplete() throws Exception {
+        ParsedArtifact parsed = parser.parse(readFixture("valid-full-report.md"), REPORT_SOURCE_PATH, "official");
+        assertThat(parsed.parseStatus()).isEqualTo("OFFICIAL");
     }
 
     @Test
     void parse_sectionValues_areStrings() throws Exception {
-        var resource = ReportMarkdownParserTest.class.getClassLoader().getResource("test-fixtures/PARSER-REPORT/list-content.md");
-        String content = Files.readString(Path.of(resource.toURI()));
-        ParsedArtifact parsed = parser.parse(content, "docs/changes/PARSER-REPORT/report.md");
+        ParsedArtifact parsed = parser.parse(readFixture("list-content.md"), REPORT_SOURCE_PATH);
         assertThat(parsed.sections()).isNotEmpty();
         assertThat(parsed.sections().values().stream().allMatch(v -> v == null || v instanceof String)).isTrue();
     }
@@ -79,7 +77,7 @@ class ReportMarkdownParserTest {
 
     @Test
     void parse_ticketIdInferredFromSourcePath() {
-        ParsedArtifact parsed = parser.parse("## Summary\nContent.", "docs/changes/PARSER-REPORT/report.md");
+        ParsedArtifact parsed = parser.parse("## Summary\nContent.", REPORT_SOURCE_PATH);
         assertThat(parsed.ticketId()).isEqualTo("PARSER-REPORT");
     }
 
@@ -92,19 +90,43 @@ class ReportMarkdownParserTest {
     @Test
     void parse_reportAliasSections_exportToParsedSummary() {
         String content = """
-                ## 1. Edited summary
+                ## 1. Tóm tắt thay đổi
                 Content for edited summary.
 
-                ## 3. Scope of influence
+                ## 2. Phạm vi ảnh hưởng
                 Scope content.
 
-                ## 5. Review results
+                ## 3. Kết quả review
                 Review passed.
 
-                ## 6. Test results
+                ## 4. Kết quả kiểm thử
                 All tests green.
+
+                ## 5. Công việc còn lại / Hành động tiếp theo
+                Follow-up item.
+
+                ## 6. Quy trình hoàn tác
+                Rollback steps.
+
+                ## 7. Danh mục đầu ra
+                Output list.
                 """;
-        ParsedArtifact parsed = parser.parse(content, "docs/changes/PARSER-REPORT/report.md");
-        assertThat(parsed.parsedSummary()).containsKeys("EDITED_SUMMARY", "SCOPE_OF_INFLUENCE", "REVIEW_RESULTS", "TEST_RESULTS");
+        ParsedArtifact parsed = parser.parse(content, REPORT_SOURCE_PATH);
+        assertThat(parsed.parsedSummary()).containsKeys(
+                "TÓM_TẮT_THAY_ĐỔI",
+                "PHẠM_VI_ẢNH_HƯỞNG",
+                "KẾT_QUẢ_REVIEW",
+                "KẾT_QUẢ_KIỂM_THỬ",
+                "EDITED_SUMMARY",
+                "SCOPE_OF_INFLUENCE",
+                "REVIEW_RESULTS",
+                "TEST_RESULTS");
+        assertThat(parsed.headerMetadata()).isEmpty();
+    }
+
+    private String readFixture(String fileName) throws Exception {
+        var resource = ReportMarkdownParserTest.class.getClassLoader()
+                .getResource("test-fixtures/PARSER-REPORT/" + fileName);
+        return Files.readString(Path.of(resource.toURI()));
     }
 }

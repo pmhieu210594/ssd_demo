@@ -56,7 +56,7 @@ class PmDashboardJdbcAdapterPhaseDwellTimeTest {
                 false, false, 0, 0, 0, 0, 0, 0, null,
                 new BigDecimal("88"), "v1", 1, "Owner", "2026-06",
                 OffsetDateTime.parse("2026-06-20T00:00:00Z"), OffsetDateTime.parse("2026-06-20T00:00:00Z"),
-                OffsetDateTime.parse("2026-06-20T00:00:00Z"), null, null);
+                OffsetDateTime.parse("2026-06-20T00:00:00Z"), null, null, null, null);
         when(jdbc.query(contains("FROM tbl_fact_ticket_dashboard_snapshot"), any(MapSqlParameterSource.class), any(RowMapper.class)))
                 .thenReturn(List.of(row));
     }

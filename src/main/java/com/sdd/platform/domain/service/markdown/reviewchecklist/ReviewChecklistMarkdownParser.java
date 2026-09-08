@@ -8,11 +8,13 @@ import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.Markdown
 import com.sdd.platform.domain.service.markdown.core.MarkdownParserCore.MarkdownTable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.text.Normalizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,6 +27,13 @@ public class ReviewChecklistMarkdownParser {
     // Path: .../changes/<TICKET>/review-checklist.md
     private static final Pattern SOURCE_PATH_PATTERN = Pattern
             .compile("(?i)(?:^|.*/)changes/([^/\\\\]+)/review-checklist\\.md$");
+    private static final String AC_CHECKLIST_MAPPING_SECTION_KEY = "BẢNG_ÁNH_XẠ_AC_CHECKLIST_ITEMS";
+    private static final List<String> STATUS_HEADERS = List.of("Trạng thái", "Trang thai", "Status");
+    private static final List<String> SEVERITY_HEADERS = List.of("Mức độ", "Muc do", "Severity");
+    private static final List<String> AC_MAPPING_CHECKLIST_HEADERS = List.of(
+            "Các hạng mục checklist xác nhận",
+            "Cac hang muc checklist xac nhan",
+            "Checklist items");
 
     public static final List<String> ALL_FIELDS = List.of();
 
@@ -41,6 +50,10 @@ public class ReviewChecklistMarkdownParser {
         "BẢNG_ÁNH_XẠ_AC_CHECKLIST_ITEMS"
         
     );
+
+    private static final List<String> CHECKLIST_SECTION_KEYS = REQUIRED_SECTION_KEYS.stream()
+            .filter(key -> !AC_CHECKLIST_MAPPING_SECTION_KEY.equals(key))
+            .toList();
 
     private static final Map<String, List<String>> PARENT_CHILD_HIERARCHY = Map.ofEntries();
 
@@ -78,7 +91,7 @@ public class ReviewChecklistMarkdownParser {
         List<MarkdownSection> sectionList = List.copyOf(document.sections());
         List<MarkdownTable> tables = List.copyOf(document.tables());
 
-        String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath, sections);
+        String ticketId = inferTicketId(frontMatter, headerMetadata, sourcePath);
         if (ticketId == null || ticketId.isBlank()) {
             warnings.add(new ParsingIssue(
                     "ticket_id_missing",
@@ -256,8 +269,7 @@ public class ReviewChecklistMarkdownParser {
 
     private String inferTicketId(Map<String, String> frontMatter,
             Map<String, String> headerMetadata,
-            String sourcePath,
-            Map<String, String> sections) {
+            String sourcePath) {
         String frontMatterTicketId = firstNonBlank(
                 frontMatter.get("ticket_id"),
                 frontMatter.get("ticket-id"),
@@ -342,11 +354,61 @@ public class ReviewChecklistMarkdownParser {
         for (String key : ALL_FIELDS) {
             summary.put(key, sections.get(key.toUpperCase()));
         }
-        summary.put("security_review_present", sections.containsKey("SECURITY_PRIVACY_REVIEW"));
-        summary.put("security_review_checked", isChecklistSectionFullyChecked(
-                sections.get("SECURITY_PRIVACY_REVIEW")));
-        summary.put("test_review_present", sections.containsKey("TEST_REVIEW"));
-        summary.put("test_review_checked", isChecklistSectionFullyChecked(sections.get("TEST_REVIEW")));
+        Map<String, Boolean> checklistSectionPresent = new LinkedHashMap<>();
+        Map<String, Boolean> checklistSectionChecked = new LinkedHashMap<>();
+        Map<String, Integer> checklistSectionItemCount = new LinkedHashMap<>();
+        Map<String, Integer> checklistSectionCheckedItemCount = new LinkedHashMap<>();
+        Map<String, Integer> checklistSectionUncheckedItemCount = new LinkedHashMap<>();
+        Map<String, Integer> uncheckedSeverityCount = new LinkedHashMap<>();
+        int checkedSectionCount = 0;
+        int checkableSectionCount = 0;
+        int totalChecklistItemCount = 0;
+        int totalCheckedChecklistItemCount = 0;
+        int totalUncheckedChecklistItemCount = 0;
+        for (String requiredSectionKey : CHECKLIST_SECTION_KEYS) {
+            String sectionBody = sections.get(requiredSectionKey);
+            boolean present = hasNonBlankSection(sections, requiredSectionKey);
+            ChecklistSectionStats stats = analyzeChecklistSection(sectionBody, tables, requiredSectionKey);
+            boolean checked = stats.fullyChecked();
+            checklistSectionPresent.put(requiredSectionKey, present);
+            checklistSectionChecked.put(requiredSectionKey, checked);
+            checklistSectionItemCount.put(requiredSectionKey, stats.totalItemCount());
+            checklistSectionCheckedItemCount.put(requiredSectionKey, stats.checkedItemCount());
+            checklistSectionUncheckedItemCount.put(requiredSectionKey, stats.uncheckedItemCount());
+            mergeUncheckedSeverityCounts(uncheckedSeverityCount, stats.uncheckedSeverityCount());
+            checkableSectionCount++;
+            totalChecklistItemCount += stats.totalItemCount();
+            totalCheckedChecklistItemCount += stats.checkedItemCount();
+            totalUncheckedChecklistItemCount += stats.uncheckedItemCount();
+            if (checked) {
+                checkedSectionCount++;
+            }
+        }
+
+        AcChecklistMappingStats mappingStats = analyzeAcChecklistMapping(
+                sections.get(AC_CHECKLIST_MAPPING_SECTION_KEY),
+                tables);
+
+        summary.put("checklist_section_present", checklistSectionPresent);
+        summary.put("checklist_section_checked", checklistSectionChecked);
+        summary.put("checklist_section_item_count", checklistSectionItemCount);
+        summary.put("checklist_section_checked_item_count", checklistSectionCheckedItemCount);
+        summary.put("checklist_section_unchecked_item_count", checklistSectionUncheckedItemCount);
+        summary.put("checklist_checked_section_count", checkedSectionCount);
+        summary.put("checklist_total_checkable_section_count", checkableSectionCount);
+        summary.put("checklist_total_item_count", totalChecklistItemCount);
+        summary.put("checklist_checked_item_count", totalCheckedChecklistItemCount);
+        summary.put("checklist_unchecked_item_count", totalUncheckedChecklistItemCount);
+        summary.put("checklist_unchecked_severity_count", uncheckedSeverityCount);
+        summary.put("all_checklist_sections_checked",
+                checkableSectionCount > 0 && checkedSectionCount == checkableSectionCount);
+        summary.put("security_review_present", checklistSectionPresent.getOrDefault("BẢO_MẬT", false));
+        summary.put("security_review_checked", checklistSectionChecked.getOrDefault("BẢO_MẬT", false));
+        summary.put("test_review_present", checklistSectionPresent.getOrDefault("KIỂM_THỬ", false));
+        summary.put("test_review_checked", checklistSectionChecked.getOrDefault("KIỂM_THỬ", false));
+        summary.put("ac_checklist_mapping_present", mappingStats.present());
+        summary.put("ac_checklist_mapping_row_count", mappingStats.rowCount());
+        summary.put("ac_checklist_mapping_complete", mappingStats.complete());
 
         // counts
         summary.put("section_count", sections.size());
@@ -358,34 +420,200 @@ public class ReviewChecklistMarkdownParser {
         summary.put("has_missing_required_sections", !missingFields.isEmpty());
 
         // detection flags
-        summary.put("has_open_issue_detected", sections.containsKey("open_issues"));
-        summary.put("has_risk_detected", sections.containsKey("risks"));
-        summary.put("has_rollback_detected", sections.containsKey("rollback"));
+        summary.put("has_open_issue_detected", hasNonBlankSection(sections, "open_issues"));
+        summary.put("has_risk_detected", hasNonBlankSection(sections, "risks"));
+        summary.put("has_rollback_detected", hasNonBlankSection(sections, "rollback"));
         summary.put("has_review_checklist_structure", !sections.isEmpty());
 
         return summary;
     }
 
-    private boolean isChecklistSectionFullyChecked(String sectionBody) {
+    private ChecklistSectionStats analyzeChecklistSection(String sectionBody,
+            List<MarkdownTable> tables,
+            String sectionKey) {
         if (sectionBody == null || sectionBody.isBlank()) {
-            return false;
+            return ChecklistSectionStats.empty();
         }
 
-        boolean hasCheckboxItem = false;
+        List<ChecklistItemStatus> tableStatuses = new ArrayList<>();
+        if (tables != null && sectionKey != null && !sectionKey.isBlank()) {
+            for (MarkdownTable table : tables) {
+                if (!sectionKey.equals(table.sectionKey())) {
+                    continue;
+                }
+                int statusIndex = findHeaderIndex(table.headers(), STATUS_HEADERS);
+                if (statusIndex < 0) {
+                    continue;
+                }
+                int severityIndex = findHeaderIndex(table.headers(), SEVERITY_HEADERS);
+                for (List<String> row : table.rows()) {
+                    String status = statusIndex < row.size() ? row.get(statusIndex) : null;
+                    if (status == null || status.isBlank()) {
+                        continue;
+                    }
+                    String severity = severityIndex >= 0 && severityIndex < row.size() ? row.get(severityIndex) : null;
+                    ChecklistItemStatus itemStatus = statusFromTableCell(status, severity);
+                    if (itemStatus == null) {
+                        return ChecklistSectionStats.empty();
+                    }
+                    tableStatuses.add(itemStatus);
+                }
+            }
+        }
+
+        if (!tableStatuses.isEmpty()) {
+            return summarizeChecklistStatuses(tableStatuses);
+        }
+
+        List<ChecklistItemStatus> checkboxStatuses = new ArrayList<>();
         for (String line : sectionBody.lines().toList()) {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) {
                 continue;
             }
             if (isCheckedCheckboxLine(trimmed)) {
-                hasCheckboxItem = true;
+                checkboxStatuses.add(new ChecklistItemStatus(true, null));
                 continue;
             }
             if (isUncheckedCheckboxLine(trimmed)) {
-                return false;
+                checkboxStatuses.add(new ChecklistItemStatus(false, null));
             }
         }
-        return hasCheckboxItem;
+        return summarizeChecklistStatuses(checkboxStatuses);
+    }
+
+    private ChecklistSectionStats summarizeChecklistStatuses(List<ChecklistItemStatus> items) {
+        if (items == null || items.isEmpty()) {
+            return ChecklistSectionStats.empty();
+        }
+        int checkedItemCount = 0;
+        int uncheckedItemCount = 0;
+        Map<String, Integer> uncheckedSeverityCount = new LinkedHashMap<>();
+        for (ChecklistItemStatus item : items) {
+            if (item.checked()) {
+                checkedItemCount++;
+                continue;
+            }
+            uncheckedItemCount++;
+            if (item.severity() != null && !item.severity().isBlank()) {
+                uncheckedSeverityCount.merge(item.severity(), 1, Integer::sum);
+            }
+        }
+        return new ChecklistSectionStats(
+                checkedItemCount + uncheckedItemCount,
+                checkedItemCount,
+                uncheckedItemCount,
+                uncheckedItemCount == 0 && checkedItemCount > 0,
+                Collections.unmodifiableMap(uncheckedSeverityCount));
+    }
+
+    private ChecklistItemStatus statusFromTableCell(String status, String severity) {
+        if (isUncheckedStatusCell(status)) {
+            return new ChecklistItemStatus(false, normalizeSeverity(severity));
+        }
+        if (isCheckedStatusCell(status)) {
+            return new ChecklistItemStatus(true, normalizeSeverity(severity));
+        }
+        return null;
+    }
+
+    private String normalizeSeverity(String severity) {
+        if (severity == null || severity.isBlank()) {
+            return null;
+        }
+        return severity.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private void mergeUncheckedSeverityCounts(Map<String, Integer> aggregate, Map<String, Integer> addition) {
+        if (aggregate == null || addition == null || addition.isEmpty()) {
+            return;
+        }
+        addition.forEach((severity, count) -> {
+            if (severity == null || severity.isBlank() || count == null || count <= 0) {
+                return;
+            }
+            aggregate.merge(severity, count, Integer::sum);
+        });
+    }
+
+    private AcChecklistMappingStats analyzeAcChecklistMapping(String sectionBody, List<MarkdownTable> tables) {
+        boolean sectionPresent = sectionBody != null && !sectionBody.isBlank();
+        if (tables == null || tables.isEmpty()) {
+            return new AcChecklistMappingStats(sectionPresent, 0, false);
+        }
+        for (MarkdownTable table : tables) {
+            if (!AC_CHECKLIST_MAPPING_SECTION_KEY.equals(table.sectionKey())) {
+                continue;
+            }
+            int acIndex = findHeaderIndex(table.headers(), List.of("AC"));
+            int checklistIndex = findHeaderIndex(table.headers(), AC_MAPPING_CHECKLIST_HEADERS);
+            if (acIndex < 0 || checklistIndex < 0) {
+                continue;
+            }
+            int completeRowCount = 0;
+            for (List<String> row : table.rows()) {
+                String acValue = acIndex < row.size() ? row.get(acIndex) : null;
+                String checklistValue = checklistIndex < row.size() ? row.get(checklistIndex) : null;
+                if (acValue != null && !acValue.isBlank() && checklistValue != null && !checklistValue.isBlank()) {
+                    completeRowCount++;
+                }
+            }
+            return new AcChecklistMappingStats(true, table.rows().size(), completeRowCount == table.rows().size()
+                    && table.rows().size() > 0);
+        }
+        return new AcChecklistMappingStats(sectionPresent, 0, false);
+    }
+
+    private int findHeaderIndex(List<String> headers, List<String> candidateHeaders) {
+        if (headers == null || headers.isEmpty() || candidateHeaders == null || candidateHeaders.isEmpty()) {
+            return -1;
+        }
+        List<String> normalizedCandidates = candidateHeaders.stream()
+                .map(this::normalizeComparisonText)
+                .toList();
+        for (int i = 0; i < headers.size(); i++) {
+            String normalizedHeader = normalizeComparisonText(headers.get(i));
+            if (normalizedCandidates.contains(normalizedHeader)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String normalizeComparisonText(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim();
+        return normalized.replaceAll("\\s+", " ");
+    }
+
+    private boolean hasNonBlankSection(Map<String, String> sections, String key) {
+        if (sections == null || key == null || key.isBlank()) {
+            return false;
+        }
+        String value = sections.get(key);
+        return value != null && !value.isBlank();
+    }
+
+    private boolean isCheckedStatusCell(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return trimmed.matches("(?i)^\\[(x|v)\\]$");
+    }
+
+    private boolean isUncheckedStatusCell(String value) {
+        if (value == null) {
+            return true;
+        }
+        String trimmed = value.trim();
+        return trimmed.matches("(?i)^\\[\\s*\\]$");
     }
 
     private boolean isCheckedCheckboxLine(String line) {
@@ -437,5 +665,22 @@ public class ReviewChecklistMarkdownParser {
                     || tables.stream().anyMatch(table -> table.rows().stream().flatMap(List::stream)
                             .anyMatch(v -> v != null && v.toLowerCase(Locale.ROOT).contains(low)));
         }
+    }
+
+    private record ChecklistItemStatus(boolean checked, String severity) {
+    }
+
+    private record ChecklistSectionStats(
+            int totalItemCount,
+            int checkedItemCount,
+            int uncheckedItemCount,
+            boolean fullyChecked,
+            Map<String, Integer> uncheckedSeverityCount) {
+        private static ChecklistSectionStats empty() {
+            return new ChecklistSectionStats(0, 0, 0, false, Map.of());
+        }
+    }
+
+    private record AcChecklistMappingStats(boolean present, int rowCount, boolean complete) {
     }
 }

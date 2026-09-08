@@ -82,7 +82,6 @@ public class SelfReviewMarkdownParserController {
         response.put("warnings", parsed.warnings());
         response.put("errors", parsed.errors());
         response.put("requiredSectionsMissing", parsed.requiredSectionsMissing());
-        response.put("finalVerdict", parsed.finalVerdict());
         response.put("contentHashSha256", parsed.contentHash());
         response.put("parserVersion", parsed.parserVersion());
         response.put("parsedSummary", parsed.parsedSummary());

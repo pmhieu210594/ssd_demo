@@ -91,6 +91,25 @@ class AiQualityControllerTest {
     }
 
     @Test
+    void byTicket_returns200WithQuality() throws Exception {
+        when(service.getByTicketId(eq(TICKET_ID), any(AuthUserContext.class)))
+                .thenReturn(java.util.Optional.of(activeRow()));
+
+        mockMvc.perform(get("/api/v1/ai-qualities/by-ticket/{ticketId}", TICKET_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticketAiQualityId").value(AI_QUALITY_ID.toString()));
+    }
+
+    @Test
+    void byTicket_returns200WithoutQuality() throws Exception {
+        when(service.getByTicketId(eq(TICKET_ID), any(AuthUserContext.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(get("/api/v1/ai-qualities/by-ticket/{ticketId}", TICKET_ID))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void create_returns201() throws Exception {
         when(service.create(eq(PROJECT_ID), eq(REPOSITORY_ID), eq(TICKET_ID), eq(new BigDecimal("92.50")), any(AuthUserContext.class)))
                 .thenReturn(activeRow());

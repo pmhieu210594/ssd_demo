@@ -31,6 +31,8 @@ class SpecPackMarkdownParserTest {
         assertThat(parsed.parsedSummary()).containsEntry("ticket_id", "PARSER-SPEC-PACK");
         assertThat(parsed.parsedSummary()).containsEntry("open_issue_total_count", 2);
         assertThat(parsed.parsedSummary().get("open_issue_open_count")).isEqualTo(Map.of("P0", 1, "P1", 1));
+        assertThat(parsed.parsedSummary()).containsEntry("has_traceability_detected", true);
+        assertThat(parsed.sections()).containsKeys("TRONG_PHẠM_VI", "NGOÀI_PHẠM_VI", "CÁC_VẤN_ĐỀ_MỞ", "RỦI_RO");
     }
 
     @Test

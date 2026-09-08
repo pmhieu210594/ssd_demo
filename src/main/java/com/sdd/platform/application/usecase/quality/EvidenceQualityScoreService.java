@@ -22,14 +22,11 @@ import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Objects;
@@ -53,12 +50,12 @@ public class EvidenceQualityScoreService {
     private static final BigDecimal MAX_REPORT = BigDecimal.valueOf(10);
     private static final BigDecimal MAX_REPORT_BASE = BigDecimal.ONE;
     private static final List<String> REPORT_SECTION_KEYS = List.of(
-            "EDITED_SUMMARY",
-            "SCOPE_OF_INFLUENCE",
-            "REVIEW_RESULTS",
-            "TEST_RESULTS",
-            "ACCEPTED_RISK",
-            "OPEN_ISSUES");
+            "TÓM_TẮT_THAY_ĐỔI",
+            "PHẠM_VI_ẢNH_HƯỞNG",
+            "KẾT_QUẢ_REVIEW",
+            "KẾT_QUẢ_KIỂM_THỬ",
+            "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO",
+            "QUY_TRÌNH_HOÀN_TÁC");
 
     private final EvidenceQualityScoreRepositoryPort repositoryPort;
     private final ObjectMapper objectMapper;
@@ -282,10 +279,10 @@ public class EvidenceQualityScoreService {
 
         ScoreCriterion report = criterion(
                 "report_overview_impact_review_test_risk_remaining",
-                "report.md contains overview, impact, review, test, risk, and remaining issues",
+                "report.md contains summary, impact, review, test results, next actions, and rollback guidance",
                 MAX_REPORT,
                 source.report() != null && source.report().isPresent(),
-                scoreReport(source.report(), source),
+                scoreReport(source.report()),
                 sourceRefs(source.report()));
         appendCriterion(breakdown, missing, lineage, report, source.report(), "tbl_fact_artifact_snapshot");
 
@@ -509,8 +506,15 @@ public class EvidenceQualityScoreService {
         if (signal == null || !signal.isPresent()) {
             return ZERO;
         }
-        return scoreBySections(signal, MAX_SELF_REVIEW, "RUN_COMMAND_AND_RESULTS", "UNPROCESSED_PENDING_ACCEPTED_RISK",
-                "FINAL_SELF_VERDICT");
+        int present = 0;
+        if (hasAnySection(signal, "CÁC_LỆNH_ĐÃ_CHẠY")) {
+            present++;
+        }
+        if (hasAnySection(signal, "KNOWN_RISKS")) {
+            present++;
+        }
+        return MAX_SELF_REVIEW.multiply(BigDecimal.valueOf((double) present / 2.0))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal scoreTestLinkage(SourceSnapshot source) {
@@ -564,45 +568,47 @@ public class EvidenceQualityScoreService {
         return MAX_CI.divide(BigDecimal.valueOf(2)).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal scoreReport(ArtifactSignal signal, SourceSnapshot source) {
+    private BigDecimal scoreReport(ArtifactSignal signal) {
         if (signal == null || !signal.isPresent()) {
             return ZERO;
         }
         BigDecimal score = MAX_REPORT_BASE;
-        if (hasSectionContent(signal, "EDITED_SUMMARY")) {
+        if (hasSectionContent(signal, "TÓM_TẮT_THAY_ĐỔI", "EDITED_SUMMARY")) {
             score = score.add(BigDecimal.valueOf(2));
         }
-        if (hasSectionContent(signal, "SCOPE_OF_INFLUENCE")) {
+        if (hasSectionContent(signal, "PHẠM_VI_ẢNH_HƯỞNG", "SCOPE_OF_INFLUENCE")) {
             score = score.add(BigDecimal.valueOf(2));
         }
-        if (hasSectionContent(signal, "REVIEW_RESULTS")) {
+        if (hasSectionContent(signal, "KẾT_QUẢ_REVIEW", "REVIEW_RESULTS")) {
             score = score.add(BigDecimal.valueOf(2));
         }
-        if (hasSectionContent(signal, "TEST_RESULTS")) {
+        if (hasSectionContent(signal, "KẾT_QUẢ_KIỂM_THỬ", "TEST_RESULTS")) {
             score = score.add(BigDecimal.valueOf(2));
         }
-        if (hasSectionContent(signal, "OPEN_ISSUES")) {
+        if (hasSectionContent(signal, "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO", "OPEN_ISSUES")) {
             score = score.add(BigDecimal.valueOf(1));
         }
         return score.min(MAX_REPORT).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private boolean hasSectionContent(ArtifactSignal signal, String key) {
+    private boolean hasSectionContent(ArtifactSignal signal, String... keys) {
         if (signal == null || !signal.isPresent()) {
             return false;
         }
-        if (hasAnySection(signal, key)) {
+        if (hasAnySection(signal, keys)) {
             return true;
         }
         if (signal.parsedSummary() == null) {
             return false;
         }
-        Object value = signal.parsedSummary().get(key);
-        if (value instanceof String str) {
-            return !str.isBlank();
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
+        for (String key : keys) {
+            Object value = signal.parsedSummary().get(key);
+            if (value instanceof String str && !str.isBlank()) {
+                return true;
+            }
+            if (value instanceof Boolean bool && bool) {
+                return true;
+            }
         }
         return false;
     }

@@ -46,7 +46,7 @@ class SelfReviewMarkdownParserControllerTest {
         assertThat(castList(result.get("freeTextSections"))).isEmpty();
         assertThat(result.get("finalVerdict")).isNull();
         assertThat(castMap(result.get("parsedSummary")))
-                .containsEntry("final_verdict", null)
+                .doesNotContainKey("final_verdict")
                 .containsEntry("parse_status", "PARTIAL")
                 .containsKey("warning_count");
     }

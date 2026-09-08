@@ -352,7 +352,7 @@ public class GenericDocParseJdbcAdapter implements DocParsePersistencePort {
                     , freshness_delay_minutes = EXCLUDED.freshness_delay_minutes
                     , error_summary = EXCLUDED.error_summary
                     , updated_at = now()
-                    , checked_at = EXCLUDED.checkedAt
+                    , checked_at = EXCLUDED.checked_at
                 """,
                 new MapSqlParameterSource()
                         .addValue("projectId", quality.projectId())

@@ -127,7 +127,8 @@ class EvidenceQualityScoreRepositoryAdapterTest {
         method.setAccessible(true);
 
         UUID ticketId = UUID.fromString("00000000-0000-0000-0000-00000000f201");
-        method.invoke(adapter, ticketId, "SPEC_PACK", List.of("SCOPE_WITHIN_RANGE", "SCOPE_OUT_OF_RANGE"));
+        method.invoke(adapter, ticketId, "SPEC_PACK", List.of("PHẠM_VI", "TRONG_PHẠM_VI", "NGOÀI_PHẠM_VI",
+                "CÁC_VẤN_ĐỀ_MỞ", "RỦI_RO"));
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
         verify(jdbc).query(sqlCaptor.capture(), any(MapSqlParameterSource.class), any(RowMapper.class));

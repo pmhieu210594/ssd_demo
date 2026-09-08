@@ -54,7 +54,7 @@ public class AiQualityController {
     ) {
         return service.getByTicketId(ticketId, caller)
                 .map(model -> ResponseEntity.ok(AiQualityDtos.AiQualityDto.from(model)))
-                .orElse(ResponseEntity.notFound().build());
+                .orElse(ResponseEntity.ok().build());
     }
 
     @PostMapping

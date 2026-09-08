@@ -1,0 +1,1 @@
+ALTER TABLE tbl_dim_ticket ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;

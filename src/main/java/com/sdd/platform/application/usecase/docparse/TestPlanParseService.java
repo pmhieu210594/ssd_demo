@@ -51,20 +51,25 @@ public class TestPlanParseService {
     public static final String SECTION_TYPE = "test-plan";
 
     private static final List<FieldSpec> FIELD_SPECS = List.of(
-            new FieldSpec("ma_tran_bao_phu", "ma-tran-bao-phu", "Ma_trận_bao_phủ",
-                    "Ma_trận_bao_phủ", "Coverage matrix", true, 1),
-            new FieldSpec("unit_test_fe", "unit-test-fe", "Unit_test_FE",
-                    "Unit_test_FE", "Frontend unit test plan", true, 2),
-            new FieldSpec("unit_test_be", "unit-test-be", "Unit_test_BE",
-                    "Unit_test_BE", "Backend unit test plan", true, 3),
-            new FieldSpec("integration_test_api", "integration-test-api", "Integration_test_API",
-                    "Integration_test_API", "API integration test plan", true, 4),
-            new FieldSpec("kiem_thu_e2e_playwright", "kiem-thu-e2e-playwright", "Kiểm_thử_E2E_(Playwright)",
-                    "Kiểm_thử_E2E_(Playwright)", "Playwright end-to-end test plan", true, 5),
-            new FieldSpec("cac_lenh_chay_kiem_thu", "cac-lenh-chay-kiem-thu", "Các_lệnh_chạy_kiểm_thử",
-                    "Các_lệnh_chạy_kiểm_thử", "Commands to execute tests", true, 6),
-            new FieldSpec("ghi_chu_rang_buoc", "ghi-chu-rang-buoc", "Ghi_chú_Ràng_buộc",
-                    "Ghi_chú_Ràng_buộc", "Constraints and notes", true, 7));
+            new FieldSpec("ac_matrix_test_type", "ma-trận-bao-phủ", "Ma trận bao phủ",
+                    "1. Ma trận bao phủ", "AC to test type coverage matrix", true, 1),
+            new FieldSpec("fe_unit_test", "unit-test-fe", "Unit test FE",
+                    "2. Unit test FE", "Frontend unit test cases", true, 2),
+            new FieldSpec("be_unit_test", "unit-test-be", "Unit test BE",
+                    "3. Unit test BE", "Backend unit test cases", true, 3),
+            new FieldSpec("api_integration_test", "integration-test-api", "Integration test API",
+                    "4. Integration test API", "API integration test scenarios", true, 4),
+            new FieldSpec("e2e_scenarios", "kiểm-thử-e2e-playwright", "Kiểm thử E2E (Playwright)",
+                    "5. Kiểm thử E2E (Playwright)", "End-to-end Playwright scenarios", true, 5),
+            new FieldSpec("execution_command", "các-lệnh-chạy-kiểm-thử", "Các lệnh chạy kiểm thử",
+                    "6. Các lệnh chạy kiểm thử", "Commands to run the tests", true, 6),
+            new FieldSpec("notes_constraints", "ghi-chú-ràng-buộc", "Ghi chú / Ràng buộc",
+                    "7. Ghi chú / Ràng buộc", "Mock policy, test data requirements, known flaky areas", true, 7));
+
+    private static final Map<String, String> TEST_CASE_SECTION_PREFIXES = Map.of(
+            "fe_unit_test", "FE",
+            "be_unit_test", "BE",
+            "api_integration_test", "API");
 
     private final ArtifactNormalizer artifactNormalizer;
     private final DocParsePersistencePort persistence;
@@ -538,8 +543,7 @@ public class TestPlanParseService {
         List<String> acKeys = extractCoveredAcIdsFromMatrix(parsed.fieldValues().get("ac_matrix_test_type"));
         testEvidencePersistencePort.replacePlannedCoverage(snapshotId, ticketId, parsed.sourceHash(), acKeys);
 
-        ParsedTestCases parsedTestCases = extractPlannedTestCases(
-                snapshotId, ticketId, parsed.fieldValues().get("additional_test_this_time"));
+        ParsedTestCases parsedTestCases = extractPlannedTestCasesFromSections(snapshotId, ticketId, parsed);
         if (!parsedTestCases.testCases().isEmpty()) {
             testEvidencePersistencePort.upsertPlannedTestCases(parsedTestCases.testCases());
         }
@@ -554,13 +558,33 @@ public class TestPlanParseService {
             List<TestEvidencePersistencePort.TestCaseAcRecord> acMappings) {
     }
 
-    private ParsedTestCases extractPlannedTestCases(UUID snapshotId, UUID ticketId, String sectionText) {
+    private ParsedTestCases extractPlannedTestCasesFromSections(UUID snapshotId, UUID ticketId, ParseResult parsed) {
+        List<TestEvidencePersistencePort.PlannedTestCaseRecord> testCases = new ArrayList<>();
+        List<TestEvidencePersistencePort.TestCaseAcRecord> acMappings = new ArrayList<>();
+        for (Map.Entry<String, String> entry : TEST_CASE_SECTION_PREFIXES.entrySet()) {
+            ParsedTestCases sectionResult = extractPlannedTestCases(
+                    snapshotId, ticketId, parsed.fieldValues().get(entry.getKey()), entry.getValue());
+            testCases.addAll(sectionResult.testCases());
+            acMappings.addAll(sectionResult.acMappings());
+        }
+        return new ParsedTestCases(testCases, acMappings);
+    }
+
+    /**
+     * Rows follow the "# | target | description | AC" shape shared by the FE/BE/API
+     * unit-test sections. There is no dedicated TC ID column, so one is synthesized
+     * from the section prefix and the row's "#" value (falling back to a running
+     * counter when "#" isn't numeric).
+     */
+    private ParsedTestCases extractPlannedTestCases(UUID snapshotId, UUID ticketId, String sectionText,
+            String sectionPrefix) {
         if (sectionText == null || sectionText.isBlank()) {
             return new ParsedTestCases(List.of(), List.of());
         }
 
         List<TestEvidencePersistencePort.PlannedTestCaseRecord> testCases = new ArrayList<>();
         List<TestEvidencePersistencePort.TestCaseAcRecord> acMappings = new ArrayList<>();
+        int rowNumber = 0;
 
         for (String rawLine : sectionText.split("\\R")) {
             String line = rawLine.trim();
@@ -568,23 +592,35 @@ public class TestPlanParseService {
                 continue;
             }
             List<String> cells = splitTableRow(line);
-            if (cells.size() < 2) {
-                continue;
-            }
-            String tcId = cells.get(0).trim();
-            if (tcId.isBlank() || isTableHeaderCell(tcId) || isSeparatorCell(tcId)) {
+            if (cells.isEmpty() || isTableHeaderCell(cells.get(0)) || isSeparatorCell(cells.get(0))) {
                 continue;
             }
 
-            String testCaseName = cells.size() > 1 ? cells.get(1).trim() : null;
+            String indexCell = cells.get(0);
+            if (indexCell.matches("\\d+")) {
+                rowNumber = Integer.parseInt(indexCell);
+                cells = cells.subList(1, cells.size());
+            } else {
+                rowNumber++;
+            }
+            if (cells.size() < 2) {
+                continue;
+            }
+
+            String target = cells.get(0).trim();
+            if (target.isBlank()) {
+                continue;
+            }
+            String description = cells.size() > 2 ? cells.get(1).trim() : null;
+            String tcId = "TC-" + sectionPrefix + "-" + rowNumber;
 
             String basis = String.join("|", safe(ticketId), safe(tcId));
             UUID testCaseId = UUID.nameUUIDFromBytes(basis.getBytes(StandardCharsets.UTF_8));
 
             testCases.add(new TestEvidencePersistencePort.PlannedTestCaseRecord(
-                    snapshotId, ticketId, tcId, testCaseName, null));
+                    snapshotId, ticketId, tcId, description != null ? description : target, null));
 
-            // last column is "related AC" — may contain comma-separated values
+            // last column is "AC" — may contain comma-separated values
             String relatedAcCell = cells.get(cells.size() - 1).trim();
             if (!relatedAcCell.isBlank() && !isTableHeaderCell(relatedAcCell) && !isSeparatorCell(relatedAcCell)) {
                 for (String acKey : relatedAcCell.split(",")) {
@@ -621,13 +657,22 @@ public class TestPlanParseService {
                 continue;
             }
 
-            String acKey = cells.get(0);
+            // skip a leading "#" row-index column if present (new matrix template)
+            int acIndex = 0;
+            while (acIndex < cells.size() && cells.get(acIndex).matches("\\d+")) {
+                acIndex++;
+            }
+            if (acIndex >= cells.size()) {
+                continue;
+            }
+
+            String acKey = cells.get(acIndex);
             if (acKey == null || acKey.isBlank() || isTableHeaderCell(acKey) || isSeparatorCell(acKey)) {
                 continue;
             }
 
             boolean covered = cells.stream()
-                    .skip(1)
+                    .skip(acIndex + 1L)
                     .anyMatch(this::isAddedTestMarker);
             if (covered) {
                 acKeys.add(acKey.trim());
@@ -652,6 +697,7 @@ public class TestPlanParseService {
     private boolean isTableHeaderCell(String cell) {
         String normalized = cell == null ? "" : cell.trim().toLowerCase(Locale.ROOT);
         return normalized.isBlank()
+                || normalized.equals("#")
                 || normalized.equals("tc id")
                 || normalized.equals("test")
                 || normalized.equals("type")

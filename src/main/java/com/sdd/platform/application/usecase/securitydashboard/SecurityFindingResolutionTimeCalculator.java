@@ -8,12 +8,13 @@ import java.util.List;
 
 /**
  * Pure, framework-free computation of "Security Finding Resolution Time"
- * for SECURITY-FINDING-RESOLUTION-TIME. See spec-pack.md BR-2 to BR-6.
+ * for SECURITY-FINDING-RESOLUTION-TIME. See spec-pack.md BR-1 to BR-6
+ * (revision 2026-08-26).
  *
- * <p>A "cycle" starts at the first snapshot with {@code unresolvedCount > 0}
- * and closes at the next snapshot with {@code unresolvedCount == 0}. The
- * result is the sum of the duration of every closed cycle; an open cycle
- * (no closing snapshot yet) is ignored (H-SECFINDRES-4).
+ * <p>The result is the duration between the first and the last
+ * {@code scan_status = 'FAIL'} scan of the ticket (across every scanner
+ * type). There is no cycle concept anymore: a single FAIL record yields a
+ * zero duration, and no FAIL record at all yields {@code "-"}.
  */
 public final class SecurityFindingResolutionTimeCalculator {
 
@@ -21,33 +22,22 @@ public final class SecurityFindingResolutionTimeCalculator {
     }
 
     /**
-     * @param historyAscByCollectedAt SAST scan snapshots for one ticket,
-     *                                already sorted ascending by
-     *                                {@code collectedAt}. Caller (adapter) is
-     *                                responsible for the ordering.
-     * @return total resolution time formatted as {@code HH:mm:ss} (hours not
-     *         capped at 24), or {@code "-"} if no cycle has closed yet.
+     * @param failHistoryAscByCollectedAt FAIL scan snapshots for one ticket,
+     *                                    already sorted ascending by
+     *                                    {@code collectedAt}. Caller (adapter)
+     *                                    is responsible for the ordering.
+     * @return {@code last.collectedAt - first.collectedAt} formatted as
+     *         {@code HH:mm:ss} (hours not capped at 24), or {@code "-"} if
+     *         there is no FAIL scan at all.
      */
-    public static String compute(List<SecurityScanSnapshot> historyAscByCollectedAt) {
-        long totalSeconds = 0;
-        boolean hasClosedCycle = false;
-        OffsetDateTime cycleStart = null;
-
-        for (SecurityScanSnapshot snapshot : historyAscByCollectedAt) {
-            if (cycleStart == null) {
-                if (snapshot.unresolvedCount() > 0) {
-                    cycleStart = snapshot.collectedAt();
-                }
-            } else if (snapshot.unresolvedCount() == 0) {
-                totalSeconds += Duration.between(cycleStart, snapshot.collectedAt()).getSeconds();
-                hasClosedCycle = true;
-                cycleStart = null;
-            }
-        }
-
-        if (!hasClosedCycle) {
+    public static String compute(List<SecurityScanSnapshot> failHistoryAscByCollectedAt) {
+        if (failHistoryAscByCollectedAt.isEmpty()) {
             return "-";
         }
+
+        OffsetDateTime first = failHistoryAscByCollectedAt.get(0).collectedAt();
+        OffsetDateTime last = failHistoryAscByCollectedAt.get(failHistoryAscByCollectedAt.size() - 1).collectedAt();
+        long totalSeconds = Duration.between(first, last).getSeconds();
         return formatDuration(totalSeconds);
     }
 

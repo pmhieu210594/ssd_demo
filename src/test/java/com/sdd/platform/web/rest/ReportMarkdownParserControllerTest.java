@@ -59,7 +59,11 @@ class ReportMarkdownParserControllerTest {
     void parseInline_returnsEnvelope() {
         var request = new ReportMarkdownParserController.ParseRequest(
                 """
-                ## Summary
+                # Báo cáo thay đổi — PARSER-REPORT (Inline)
+                - **Ticket:** PARSER-REPORT
+                - **Cập nhật ngày:** 2026-08-25 10:15
+
+                ## 1. Tóm tắt thay đổi
                 Test content.
                 """,
                 "docs/changes/PARSER-REPORT/report.md",

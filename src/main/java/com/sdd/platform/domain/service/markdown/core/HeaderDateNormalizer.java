@@ -18,6 +18,7 @@ import java.time.format.DateTimeParseException;
 public final class HeaderDateNormalizer {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_TIME_MINUTE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_ONLY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     /**
@@ -40,6 +41,13 @@ public final class HeaderDateNormalizer {
 
         try {
             LocalDateTime dateTime = LocalDateTime.parse(trimmed, DATE_TIME_FORMAT);
+            return dateTime.atOffset(CANONICAL_OFFSET);
+        } catch (DateTimeParseException ignored) {
+            // fall through to bare-date attempt
+        }
+
+        try {
+            LocalDateTime dateTime = LocalDateTime.parse(trimmed, DATE_TIME_MINUTE_FORMAT);
             return dateTime.atOffset(CANONICAL_OFFSET);
         } catch (DateTimeParseException ignored) {
             // fall through to bare-date attempt

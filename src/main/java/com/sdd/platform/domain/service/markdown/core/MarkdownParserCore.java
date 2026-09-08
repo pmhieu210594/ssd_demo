@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.text.Normalizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,7 +35,7 @@ import java.util.stream.Collectors;
 public class MarkdownParserCore {
 
     private static final Pattern HEADING_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+?)\\s*$");
-    private static final Pattern TOP_META_PATTERN = Pattern.compile("^\\*\\*([^*]+)\\*\\*:\\s*(.+?)\\s*$");
+    private static final Pattern TOP_META_PATTERN = Pattern.compile("^(?:[-*+]\\s+)?\\*\\*([^*]+?)\\*\\*:?\\s*(.+?)\\s*$");
     private static final Pattern PLACEHOLDER_BRACKET_PATTERN = Pattern.compile("^<[^>]*>$");
     private static final Pattern TRAILING_NUMBERED_HEADING_PATTERN = Pattern.compile("^\\d+(?:\\.\\d+)*\\.?\\s+");
     private static final List<String> PLACEHOLDER_TOKENS = List.of("---", "TBD", "TODO", "N/A", "-");
@@ -208,6 +209,9 @@ public class MarkdownParserCore {
             String[] lines = section.body().split("\\R", -1);
             for (int i = 0; i < lines.length; i++) {
                 String line = lines[i].trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
                 if (isPlaceholderToken(line)) {
                     placeholders.add(new MarkdownPlaceholder(
                             line,
@@ -296,7 +300,22 @@ public class MarkdownParserCore {
     }
 
     private String normalizeMetadataKey(String raw) {
-        return raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "_");
+        if (raw == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(raw.trim(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", "_");
+        return switch (normalized) {
+            case "ticket", "ticket_id", "ticketid", "change_id" -> "ticket_id";
+            case "status", "trang_thai" -> "status";
+            case "create_date", "created_date", "created_at", "tao_ngay" -> "create_date";
+            case "update_date", "updated_date", "updated_at", "cap_nhat_ngay" -> "update_date";
+            default -> normalized;
+        };
     }
 
     private String normalizeContent(String content) {
@@ -361,6 +380,24 @@ public class MarkdownParserCore {
                         .trim();
 
         return switch (normalized) {
+            case "summary", "edited summary", "change summary" -> "TÓM_TẮT_THAY_ĐỔI";
+            case "scope of influence", "impact scope" -> "PHẠM_VI_ẢNH_HƯỞNG";
+            case "review results" -> "KẾT_QUẢ_REVIEW";
+            case "test result", "test results" -> "KẾT_QUẢ_KIỂM_THỬ";
+            case "remaining work next actions", "remaining work next action", "next actions" ->
+                "CÔNG_VIỆC_CÒN_LẠI_HÀNH_ĐỘNG_TIẾP_THEO";
+            case "rollback procedure", "rollback plan" -> "QUY_TRÌNH_HOÀN_TÁC";
+            case "output inventory", "deliverables", "output catalog" -> "DANH_MỤC_ĐẦU_RA";
+            case "spec ac" -> "SPEC_AC";
+            case "design dependency", "design dependencies" -> "THIẾT_KẾ_PHỤ_THUỘC";
+            case "security" -> "BẢO_MẬT";
+            case "performance" -> "HIỆU_NĂNG";
+            case "compatibility" -> "TƯƠNG_THÍCH";
+            case "logging audit" -> "LOGGING_AUDIT";
+            case "error handling" -> "XỬ_LÝ_LỖI";
+            case "test" -> "KIỂM_THỬ";
+            case "operations", "operation" -> "VẬN_HÀNH";
+            case "ac checklist mapping", "ac checklist items mapping" -> "BẢNG_ÁNH_XẠ_AC_CHECKLIST_ITEMS";
             case "context purpose" -> "CONTEXT_PURPOSE";
             case "scope" -> "SCOPE";
             case "within range" -> "SCOPE_WITHIN_RANGE";
